@@ -10,7 +10,7 @@ from app.services.user_service import create_user, login_user
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
-def register(payload: UserRegister, db: Session = Depends(get_db)):
+def register(payload: UserRegister, db: Session = Depends(get_db)) -> Token:
     try:
         user = create_user(payload=payload, db=db)
     except ElementAlreadyExistsException:
@@ -21,7 +21,7 @@ def register(payload: UserRegister, db: Session = Depends(get_db)):
     return create_bearer_token(user_id=user.id)
 
 @router.post("/login", response_model=Token)
-def login(payload: UserLogin, db: Session = Depends(get_db)):
+def login(payload: UserLogin, db: Session = Depends(get_db)) -> Token:
     try:
         user = login_user(payload=payload, db=db)
     except BadCredentialsException:
