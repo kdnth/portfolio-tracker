@@ -1,45 +1,33 @@
 from fastapi import APIRouter, status, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.security import hash_password, create_access_token, verify_password
+from app.core.exceptions import ElementAlreadyExistsException, BadCredentialsException
 from app.db.session import get_db
-from app.models.user import User
 from app.schemas.user import UserRegister, Token, UserLogin
+from app.services.auth_service import create_bearer_token
+from app.services.user_service import create_user, login_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
 def register(payload: UserRegister, db: Session = Depends(get_db)):
-    existing = db.query(User).filter(
-        (User.username == payload.username) | (User.email == payload.email)
-    ).first()
-    if existing is not None:
+    try:
+        user = create_user(payload=payload, db=db)
+    except ElementAlreadyExistsException:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Username or email already registered"
         )
-    user = User(
-        username=payload.username,
-        email=payload.email,
-        password_hash=hash_password(payload.password)
-    )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-
-    access_token = create_access_token(subject=str(user.id))
-    return Token(access_token=access_token, token_type="bearer")
+    return create_bearer_token(user_id=user.id)
 
 @router.post("/login", response_model=Token)
 def login(payload: UserLogin, db: Session = Depends(get_db)):
-    user = db.query(User).filter(
-        (User.username == payload.identifier) | (User.email == payload.identifier)).first()
-
-    if user is None or not verify_password(payload.password, user.password_hash):
+    try:
+        user = login_user(payload=payload, db=db)
+    except BadCredentialsException:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials"
+            detail="Invalid username or password"
         )
 
-    access_token = create_access_token(subject=str(user.id))
-    return Token(access_token, token_type="bearer")
+    return create_bearer_token(user_id=user.id)
