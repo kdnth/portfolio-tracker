@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 
 from app.api.routes import auth, portfolio, user
+from app import models  # noqa: F401 - ensures all models are registered before mappers configure
 
 app = FastAPI(title="Portfolio Tracker")
 
