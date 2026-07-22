@@ -8,10 +8,10 @@ export interface UserResponse {
   email: string
 }
 
-const TOKEN_ = 'token'
+const TOKEN_KEY = 'token'
 
 export const useAuthStore = defineStore('auth', () => {
-  const token = ref<string | null>(localStorage.getItem('token'))
+  const token = ref<string | null>(localStorage.getItem(TOKEN_KEY))
   const userId = ref<number | null>(null)
   const username = ref<string | null>(null)
   const email = ref<string | null>(null)
@@ -20,7 +20,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   function setToken(newToken: string) {
     token.value = newToken
-    localStorage.setItem(TOKEN_, newToken)
+    localStorage.setItem(TOKEN_KEY, newToken)
   }
 
   function clearAuth() {
@@ -28,7 +28,7 @@ export const useAuthStore = defineStore('auth', () => {
     userId.value = null
     username.value = null
     email.value = null
-    localStorage.removeItem(TOKEN_)
+    localStorage.removeItem(TOKEN_KEY)
   }
 
   async function register(usernameInput: string, emailInput: string, password: string) {
