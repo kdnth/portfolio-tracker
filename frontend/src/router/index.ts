@@ -1,8 +1,10 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
+import AppShell from '@/components/layout/AppShell.vue'
 import { useAuthStore } from '@/stores/auth'
-import HomeView from '@/views/HomeView.vue'
 import LoginView from '@/views/LoginView.vue'
+import PortfolioDetailView from '@/views/PortfolioDetailView.vue'
+import PortfolioListView from '@/views/PortfolioListView.vue'
 import RegisterView from '@/views/RegisterView.vue'
 
 const router = createRouter({
@@ -10,9 +12,21 @@ const router = createRouter({
   routes: [
     {
       path: '/',
-      name: 'home',
-      component: HomeView,
+      component: AppShell,
       meta: { requiresAuth: true },
+      children: [
+        { path: '', redirect: { name: 'portfolios' } },
+        {
+          path: 'portfolios',
+          name: 'portfolios',
+          component: PortfolioListView,
+        },
+        {
+          path: 'portfolios/:portfolioId',
+          name: 'portfolio-detail',
+          component: PortfolioDetailView,
+        },
+      ],
     },
     {
       path: '/login',
@@ -31,13 +45,15 @@ const router = createRouter({
 
 router.beforeEach((to) => {
   const auth = useAuthStore()
+  const requiresAuth = to.matched.some((record) => record.meta.requiresAuth)
+  const guestOnly = to.matched.some((record) => record.meta.guestOnly)
 
-  if (to.meta.requiresAuth && !auth.isAuthenticated) {
+  if (requiresAuth && !auth.isAuthenticated) {
     return { name: 'login', query: { redirect: to.fullPath } }
   }
 
-  if (to.meta.guestOnly && auth.isAuthenticated) {
-    return { name: 'home' }
+  if (guestOnly && auth.isAuthenticated) {
+    return { name: 'portfolios' }
   }
 })
 

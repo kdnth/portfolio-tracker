@@ -13,6 +13,8 @@ const props = withDefaults(
     hint?: string
     required?: boolean
     disabled?: boolean
+    step?: string
+    min?: string
   }>(),
   {
     type: 'text',
@@ -23,6 +25,8 @@ const props = withDefaults(
     hint: undefined,
     required: false,
     disabled: false,
+    step: undefined,
+    min: undefined,
   },
 )
 
@@ -55,6 +59,8 @@ const describedBy = computed(() => {
       :placeholder="placeholder"
       :required="required"
       :disabled="disabled"
+      :step="step"
+      :min="min"
       :aria-invalid="error ? true : undefined"
       :aria-describedby="describedBy"
       class="w-full rounded-lg border border-border bg-surface px-3 py-2.5 text-sm text-ink outline-none transition placeholder:text-ink-muted/70 focus:border-accent focus:ring-2 focus:ring-accent/20 disabled:cursor-not-allowed disabled:bg-canvas disabled:opacity-70"

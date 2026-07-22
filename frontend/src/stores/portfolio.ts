@@ -60,6 +60,11 @@ export const usePortfolioStore = defineStore('portfolio', () => {
     await fetchHoldings(portfolioId)
   }
 
+  function clearCurrent() {
+    currentPortfolio.value = null
+    currentHoldings.value = []
+  }
+
   return {
     portfolios,
     currentPortfolio,
@@ -69,5 +74,6 @@ export const usePortfolioStore = defineStore('portfolio', () => {
     fetchHoldings,
     fetchPortfolio,
     createTrade,
+    clearCurrent,
   }
 })

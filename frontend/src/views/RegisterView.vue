@@ -55,7 +55,7 @@ async function onSubmit() {
   loading.value = true
   try {
     await auth.register(form.username.trim(), form.email.trim(), form.password)
-    await router.push({ name: 'home' })
+    await router.push({ name: 'portfolios' })
   } catch (error) {
     formError.value = getApiErrorMessage(error, 'Unable to create your account.')
   } finally {
