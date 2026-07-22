@@ -18,7 +18,8 @@ def create_trade(db: Session, portfolio_id: int, payload: TradeCreate) -> Trade:
             ticker=payload.ticker,
             shares=0,
             avg_cost_basis_cents=0,
-            current_price_cents=payload.price_per_share_cents
+            current_price_cents=payload.price_per_share_cents,
+            last_priced_at=payload.executed_at,
         )
         db.add(holding)
         db.flush()
@@ -36,6 +37,9 @@ def create_trade(db: Session, portfolio_id: int, payload: TradeCreate) -> Trade:
         if payload.shares > holding.shares:
             raise NoSuchElementException()
         holding.shares -= payload.shares
+
+    holding.current_price_cents = payload.price_per_share_cents
+    holding.last_priced_at = payload.executed_at
 
     trade = Trade(
         holding_id=holding.id,

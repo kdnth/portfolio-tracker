@@ -5,7 +5,11 @@ export function getApiErrorMessage(error: unknown, fallback = 'Something went wr
     return fallback
   }
 
-  const detail = error.response?.data?.detail
+  if (!error.response) {
+    return error.message || fallback
+  }
+
+  const detail = error.response.data?.detail
 
   if (typeof detail === 'string') {
     return detail
