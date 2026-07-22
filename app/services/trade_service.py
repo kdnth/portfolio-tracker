@@ -10,7 +10,7 @@ def create_trade(db: Session, portfolio_id: int, payload: TradeCreate) -> Trade:
     """Records a new trade against a portfolio. This will either create or update the matching Holding's aggregate share count and average cost basis.
     Raises NoSuchElementException if attempting to sell more shares than are held."""
     holding = (
-        db.query(Holding).filter(Holding.portfolio_id == portfolio_id, Holding.ticket == payload.ticker).first()
+        db.query(Holding).filter(Holding.portfolio_id == portfolio_id, Holding.ticker == payload.ticker).first()
     )
     if holding is None:
         holding = Holding(
