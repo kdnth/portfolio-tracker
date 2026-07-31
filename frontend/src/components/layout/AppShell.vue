@@ -2,6 +2,7 @@
 import { onMounted } from 'vue'
 import { RouterLink, RouterView, useRouter } from 'vue-router'
 
+import logoUrl from '@/assets/logo.png'
 import AppButton from '@/components/ui/AppButton.vue'
 import { useAuthStore } from '@/stores/auth'
 
@@ -30,8 +31,15 @@ async function onLogout() {
       <div class="mx-auto flex h-14 max-w-5xl items-center justify-between gap-4 px-4">
         <RouterLink
           :to="{ name: 'portfolios' }"
-          class="text-sm font-semibold tracking-[0.14em] text-accent uppercase"
+          class="inline-flex items-center gap-2.5 text-sm font-semibold tracking-[0.14em] text-accent uppercase"
         >
+          <img
+            :src="logoUrl"
+            alt=""
+            width="28"
+            height="28"
+            class="size-7 rounded-md"
+          />
           Portfolio Tracker
         </RouterLink>
 
