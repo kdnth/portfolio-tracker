@@ -9,3 +9,6 @@ class ElementAlreadyExistsException(ServiceException):
 
 class BadCredentialsException(ServiceException):
     pass
+
+class PriceUnavailableException(ServiceException):
+    pass
