@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.db.session import get_db
 from app.main import app
+from app.services import price_service
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -18,6 +19,15 @@ TEST_DATABASE_URL = os.getenv(
 
 engine = create_engine(TEST_DATABASE_URL)
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+@pytest.fixture(autouse=True)
+def _no_live_backfill(monkeypatch):
+    """Recording a trade for a not-yet-tracked ticker triggers a Twelve Data historical
+    backfill. Without this, any test that records such a trade would silently make a real
+    network call. Tests that specifically exercise backfill behavior re-patch
+    get_daily_history themselves, which overrides this default."""
+    monkeypatch.setattr(price_service, "get_daily_history", lambda ticker: [])
+
 
 @pytest.fixture
 def db_session():

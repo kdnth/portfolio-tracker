@@ -4,6 +4,7 @@ from app.core.exceptions import NoSuchElementException
 from app.models import Trade, Holding
 from app.models.trade import TradeOptions
 from app.schemas.trade import TradeCreate
+from app.services.price_service import backfill_ticker_history_if_new
 
 
 def create_trade(db: Session, portfolio_id: int, payload: TradeCreate) -> Trade:
@@ -23,6 +24,7 @@ def create_trade(db: Session, portfolio_id: int, payload: TradeCreate) -> Trade:
         )
         db.add(holding)
         db.flush()
+        backfill_ticker_history_if_new(db, payload.ticker)
 
     if payload.trade_type == TradeOptions.BUY:
         total_existing_cost = holding.shares * holding.avg_cost_basis_cents

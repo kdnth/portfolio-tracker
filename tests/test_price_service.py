@@ -4,6 +4,7 @@ from app.core.exceptions import PriceUnavailableException
 from app.models import Holding, Portfolio, PortfolioSnapshot, PriceSnapshot, User
 from app.services import price_service
 from app.services.finnhub_service import QuoteResult
+from app.services.twelvedata_service import DailyClose
 
 
 def _make_user_and_portfolio(db_session, username="alice"):
@@ -112,3 +113,50 @@ def test_poll_is_idempotent_for_repeated_quote_timestamps(db_session, monkeypatc
     price_service.poll_and_record_prices(db_session)
 
     assert db_session.query(PriceSnapshot).count() == 1
+
+
+def test_backfill_writes_history_for_a_genuinely_new_ticker(db_session, monkeypatch):
+    calls = []
+    daily_closes = [
+        DailyClose("AAPL", 15000, datetime(2026, 8, 19, 20, 0, tzinfo=timezone.utc)),
+        DailyClose("AAPL", 15200, datetime(2026, 8, 20, 20, 0, tzinfo=timezone.utc)),
+    ]
+
+    def fake_get_daily_history(ticker):
+        calls.append(ticker)
+        return daily_closes
+
+    monkeypatch.setattr(price_service, "get_daily_history", fake_get_daily_history)
+
+    price_service.backfill_ticker_history_if_new(db_session, "AAPL")
+
+    assert calls == ["AAPL"]
+    snapshots = db_session.query(PriceSnapshot).filter(PriceSnapshot.ticker == "AAPL").all()
+    assert {s.price_cents for s in snapshots} == {15000, 15200}
+
+
+def test_backfill_skips_a_ticker_already_tracked(db_session, monkeypatch):
+    db_session.add(
+        PriceSnapshot(ticker="MSFT", price_cents=30000, as_of=datetime(2026, 8, 1, tzinfo=timezone.utc))
+    )
+    db_session.flush()
+
+    calls = []
+    monkeypatch.setattr(
+        price_service, "get_daily_history", lambda ticker: calls.append(ticker) or []
+    )
+
+    price_service.backfill_ticker_history_if_new(db_session, "MSFT")
+
+    assert calls == []  # never called Twelve Data for an already-tracked ticker
+
+
+def test_backfill_failure_is_swallowed_not_raised(db_session, monkeypatch):
+    def raise_unavailable(ticker):
+        raise PriceUnavailableException(ticker)
+
+    monkeypatch.setattr(price_service, "get_daily_history", raise_unavailable)
+
+    price_service.backfill_ticker_history_if_new(db_session, "TSLA")  # must not raise
+
+    assert db_session.query(PriceSnapshot).filter(PriceSnapshot.ticker == "TSLA").count() == 0

@@ -1,3 +1,4 @@
+import logging
 from collections import defaultdict
 from datetime import datetime, timezone
 
@@ -8,6 +9,9 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import PriceUnavailableException
 from app.models import Holding, PortfolioSnapshot, PriceSnapshot
 from app.services.finnhub_service import QuoteResult, get_quote
+from app.services.twelvedata_service import DailyClose, get_daily_history
+
+logger = logging.getLogger(__name__)
 
 
 def list_actively_held_tickers(db: Session) -> list[str]:
@@ -17,7 +21,7 @@ def list_actively_held_tickers(db: Session) -> list[str]:
     return [row[0] for row in rows]
 
 
-def _record_price_snapshot(db: Session, quote: QuoteResult) -> None:
+def _record_price_snapshot(db: Session, quote: QuoteResult | DailyClose) -> None:
     """Writes a PriceSnapshot row for the quote, silently skipping if one already exists
     for this (ticker, as_of) pair -- Finnhub returns the last trade's timestamp, which can
     repeat across polls when a ticker hasn't traded since the previous cycle."""
@@ -52,6 +56,28 @@ def _record_portfolio_snapshots(db: Session, as_of: datetime) -> None:
                 as_of=as_of,
             )
         )
+
+
+def backfill_ticker_history_if_new(db: Session, ticker: str) -> None:
+    """If no PriceSnapshot exists yet for this ticker anywhere in the app, backfills the
+    most recent 30 daily closes from Twelve Data. A failure here (bad symbol, rate limit,
+    network error) is logged and swallowed, never raised -- this is an enrichment step, not
+    part of the core trade-recording operation it's called from. Doesn't commit; the caller's
+    own transaction covers any rows staged here."""
+    already_tracked = db.query(PriceSnapshot).filter(PriceSnapshot.ticker == ticker).first() is not None
+    if already_tracked:
+        return
+
+    try:
+        daily_closes = get_daily_history(ticker)
+    except (PriceUnavailableException, httpx.HTTPError):
+        logger.warning("Historical backfill unavailable for new ticker '%s'", ticker)
+        return
+
+    for daily_close in daily_closes:
+        _record_price_snapshot(db, daily_close)
+
+    logger.info("Backfilled %d day(s) of history for new ticker '%s'", len(daily_closes), ticker)
 
 
 def poll_and_record_prices(db: Session) -> list[str]:

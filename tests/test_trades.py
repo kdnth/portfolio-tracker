@@ -1,3 +1,80 @@
+from datetime import datetime, timezone
+
+import httpx
+
+from app.models import PriceSnapshot
+from app.services import price_service
+from app.services.twelvedata_service import DailyClose
+
+
+def _record_buy(client, headers, portfolio_id, ticker="AAPL"):
+    return client.post(
+        f"/portfolios/{portfolio_id}/trades/",
+        json={
+            "ticker": ticker,
+            "trade_type": "buy",
+            "shares": 10,
+            "price_per_share_cents": 15000,
+            "executed_at": "2026-07-01T00:00:00Z",
+        },
+        headers=headers,
+    )
+
+
+def test_first_trade_on_a_new_ticker_backfills_history(client, make_user, monkeypatch):
+    headers = make_user(username="alice", email="alice@test.com")
+    portfolio_id = client.post("/portfolios/", json={"name": "Growth"}, headers=headers).json()["id"]
+
+    calls = []
+    monkeypatch.setattr(
+        price_service,
+        "get_daily_history",
+        lambda ticker: calls.append(ticker)
+        or [DailyClose(ticker, 14000, datetime(2026, 6, 30, 20, 0, tzinfo=timezone.utc))],
+    )
+
+    response = _record_buy(client, headers, portfolio_id, ticker="AAPL")
+
+    assert response.status_code == 201
+    assert calls == ["AAPL"]
+
+
+def test_second_holding_of_an_already_tracked_ticker_does_not_backfill_again(
+    client, make_user, db_session, monkeypatch
+):
+    db_session.add(
+        PriceSnapshot(ticker="AAPL", price_cents=14000, as_of=datetime(2026, 6, 30, tzinfo=timezone.utc))
+    )
+    db_session.flush()
+
+    headers = make_user(username="alice", email="alice@test.com")
+    portfolio_id = client.post("/portfolios/", json={"name": "Growth"}, headers=headers).json()["id"]
+
+    calls = []
+    monkeypatch.setattr(
+        price_service, "get_daily_history", lambda ticker: calls.append(ticker) or []
+    )
+
+    response = _record_buy(client, headers, portfolio_id, ticker="AAPL")
+
+    assert response.status_code == 201
+    assert calls == []  # AAPL already has history from another portfolio/user
+
+
+def test_backfill_failure_does_not_fail_the_trade(client, make_user, monkeypatch):
+    headers = make_user(username="alice", email="alice@test.com")
+    portfolio_id = client.post("/portfolios/", json={"name": "Growth"}, headers=headers).json()["id"]
+
+    def raise_error(ticker):
+        raise httpx.ConnectError("network unreachable")
+
+    monkeypatch.setattr(price_service, "get_daily_history", raise_error)
+
+    response = _record_buy(client, headers, portfolio_id, ticker="AAPL")
+
+    assert response.status_code == 201
+
+
 def test_cannot_create_trade_on_other_users_portfolio(client, make_user):
     alice_headers = make_user(username="alice", email="alice@test.com")
     bob_headers = make_user(username="bob123", email="bob@test.com")
