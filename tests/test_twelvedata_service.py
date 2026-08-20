@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from app.core.exceptions import PriceUnavailableException
+from app.core.exceptions import PriceUnavailableException, RateLimitExceededException
 from app.services import twelvedata_service
 
 
@@ -61,3 +61,45 @@ def test_get_daily_history_raises_on_error_status(monkeypatch):
 
     with pytest.raises(PriceUnavailableException):
         twelvedata_service.get_daily_history("NOTATICKER")
+
+
+def test_rate_limit_blocks_calls_beyond_the_free_tier_cap(monkeypatch):
+    call_count = 0
+
+    def fake_get(url, params, timeout):
+        nonlocal call_count
+        call_count += 1
+        return FakeResponse({"status": "ok", "values": []})
+
+    monkeypatch.setattr(twelvedata_service.httpx, "get", fake_get)
+
+    for _ in range(twelvedata_service.RATE_LIMIT_MAX_CALLS):
+        twelvedata_service.get_daily_history("AAPL")
+
+    assert call_count == twelvedata_service.RATE_LIMIT_MAX_CALLS
+
+    with pytest.raises(RateLimitExceededException):
+        twelvedata_service.get_daily_history("AAPL")
+
+    # the rejected call never reached the network
+    assert call_count == twelvedata_service.RATE_LIMIT_MAX_CALLS
+
+
+def test_rate_limit_allows_calls_again_once_the_window_has_passed(monkeypatch):
+    monkeypatch.setattr(
+        twelvedata_service.httpx, "get", lambda url, params, timeout: FakeResponse({"status": "ok", "values": []})
+    )
+
+    fake_now = 1000.0
+    monkeypatch.setattr(twelvedata_service.time_module, "monotonic", lambda: fake_now)
+
+    for _ in range(twelvedata_service.RATE_LIMIT_MAX_CALLS):
+        twelvedata_service.get_daily_history("AAPL")
+
+    with pytest.raises(RateLimitExceededException):
+        twelvedata_service.get_daily_history("AAPL")
+
+    fake_now += twelvedata_service.RATE_LIMIT_WINDOW_SECONDS + 1
+    monkeypatch.setattr(twelvedata_service.time_module, "monotonic", lambda: fake_now)
+
+    twelvedata_service.get_daily_history("AAPL")  # doesn't raise -- window has rolled over

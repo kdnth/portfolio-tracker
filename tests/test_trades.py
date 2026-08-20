@@ -21,6 +21,62 @@ def _record_buy(client, headers, portfolio_id, ticker="AAPL"):
     )
 
 
+def test_second_buy_against_an_existing_holding_succeeds(client, make_user):
+    """Regression test: Holding.shares/Trade.shares are Numeric columns, which SQLAlchemy
+    returns as decimal.Decimal once a row has actually round-tripped through Postgres (not
+    just been flushed). A first trade against a brand-new in-memory Holding doesn't exercise
+    this -- only a second trade against an already-committed-and-reloaded holding does, which
+    is exactly the case that broke when TradeCreate.shares was still a plain float."""
+    headers = make_user(username="alice", email="alice@test.com")
+    portfolio_id = client.post("/portfolios/", json={"name": "Growth"}, headers=headers).json()["id"]
+
+    first = _record_buy(client, headers, portfolio_id, ticker="AAPL")
+    assert first.status_code == 201
+
+    second = client.post(
+        f"/portfolios/{portfolio_id}/trades/",
+        json={
+            "ticker": "AAPL",
+            "trade_type": "buy",
+            "shares": 5,
+            "price_per_share_cents": 18000,
+            "executed_at": "2026-07-02T00:00:00Z",
+        },
+        headers=headers,
+    )
+
+    assert second.status_code == 201
+    holdings = client.get(f"/portfolios/{portfolio_id}/holdings/", headers=headers).json()
+    assert float(holdings[0]["shares"]) == 15
+    # weighted avg: (10*15000 + 5*18000) / 15 = 16000
+    assert holdings[0]["avg_cost_basis_cents"] == 16000
+
+
+def test_sell_against_an_existing_holding_succeeds(client, make_user):
+    """Same Decimal/float regression, on the sell path."""
+    headers = make_user(username="alice", email="alice@test.com")
+    portfolio_id = client.post("/portfolios/", json={"name": "Growth"}, headers=headers).json()["id"]
+
+    buy = _record_buy(client, headers, portfolio_id, ticker="AAPL")
+    assert buy.status_code == 201
+
+    sell = client.post(
+        f"/portfolios/{portfolio_id}/trades/",
+        json={
+            "ticker": "AAPL",
+            "trade_type": "sell",
+            "shares": 4,
+            "price_per_share_cents": 17000,
+            "executed_at": "2026-07-02T00:00:00Z",
+        },
+        headers=headers,
+    )
+
+    assert sell.status_code == 201
+    holdings = client.get(f"/portfolios/{portfolio_id}/holdings/", headers=headers).json()
+    assert float(holdings[0]["shares"]) == 6
+
+
 def test_first_trade_on_a_new_ticker_backfills_history(client, make_user, monkeypatch):
     headers = make_user(username="alice", email="alice@test.com")
     portfolio_id = client.post("/portfolios/", json={"name": "Growth"}, headers=headers).json()["id"]
