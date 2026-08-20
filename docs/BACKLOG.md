@@ -90,7 +90,7 @@ Proves the Anthropic-contract mechanics work, then builds the tool-use loop. No 
   - **Plan changed**: originally targeted DeepSeek's Anthropic-compatible endpoint (`ANTHROPIC_BASE_URL` pointed there). First run hit a real, useful checkpoint failure — 401, the configured `ANTHROPIC_API_KEY` was Anthropic-shaped, not a valid DeepSeek key. Decided to pivot to the real Anthropic API with Claude Haiku 4.5 (`claude-haiku-4-5-20251001`, no extended thinking) instead, using existing prepaid credits, with possible DeepSeek pivot once those credits run out. `anthropic_base_url` now defaults to `https://api.anthropic.com` in config rather than being required, so that later pivot is a one-line env var change. Test passed against real Claude on the first try after the pivot.
   - One commit.
 
-- [ ] **3.2 — Tool implementations**: the three portfolio tools as plain Python functions + their Anthropic tool-schema definitions.
+- [x] **3.2 — Tool implementations**: the three portfolio tools as plain Python functions + their Anthropic tool-schema definitions.
   - `get_holdings`, `get_price_history`, `get_trade_history` — likely in a new `app/services/agent_tools.py`.
   - Each takes `db`, the server-bound `portfolio_id`, and only the model-controlled params from the spec (ticker/range) — never `portfolio_id` itself from the model.
   - Unit tests calling each function directly against the test DB.
