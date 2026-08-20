@@ -2,10 +2,11 @@
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
+import PerformanceChart from '@/components/portfolio/PerformanceChart.vue'
 import RecordTradeModal from '@/components/portfolio/RecordTradeModal.vue'
 import AppAlert from '@/components/ui/AppAlert.vue'
 import AppButton from '@/components/ui/AppButton.vue'
-import { usePortfolioStore } from '@/stores/portfolio'
+import { usePortfolioStore, type PerformanceRange } from '@/stores/portfolio'
 import { getApiErrorMessage } from '@/utils/apiError'
 import { formatCents, holdingMarketValueCents } from '@/utils/money'
 
@@ -25,6 +26,18 @@ const totalMarketValueCents = computed(() =>
   ),
 )
 
+const portfolioChartPoints = computed(() =>
+  portfolioStore.portfolioPerformance.map((point) => ({
+    as_of: point.as_of,
+    value_cents: point.total_market_value_cents,
+  })),
+)
+
+function loadPortfolioPerformance(range: PerformanceRange = '1M') {
+  if (!Number.isFinite(portfolioId.value)) return
+  portfolioStore.fetchPortfolioPerformance(portfolioId.value, range)
+}
+
 async function load() {
   if (!Number.isFinite(portfolioId.value)) {
     loadError.value = 'Invalid portfolio id.'
@@ -39,6 +52,7 @@ async function load() {
       portfolioStore.fetchPortfolio(portfolioId.value),
       portfolioStore.fetchHoldings(portfolioId.value),
     ])
+    loadPortfolioPerformance()
   } catch (error) {
     loadError.value = getApiErrorMessage(error, 'Unable to load portfolio.')
     portfolioStore.clearCurrent()
@@ -82,6 +96,17 @@ onUnmounted(() => {
         </div>
 
         <AppButton @click="tradeOpen = true">Record trade</AppButton>
+      </div>
+
+      <div class="mt-6 rounded-2xl border border-border bg-surface p-5">
+        <h2 class="text-sm font-semibold text-ink-muted">Performance</h2>
+        <PerformanceChart
+          class="mt-2"
+          :points="portfolioChartPoints"
+          :loading="portfolioStore.portfolioPerformanceLoading"
+          label="Portfolio value"
+          @range-change="loadPortfolioPerformance"
+        />
       </div>
 
       <div
