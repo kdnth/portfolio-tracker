@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     finnhub_api_key: str
     twelve_data_api_key: str
+    anthropic_api_key: str
+    anthropic_base_url: str = "https://api.anthropic.com"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

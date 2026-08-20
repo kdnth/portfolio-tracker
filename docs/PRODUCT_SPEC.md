@@ -104,10 +104,9 @@ An agent, embedded in the app, that analyzes a portfolio's holdings and performa
 
 ### Runtime
 
-- **Built against the Anthropic Messages API contract**, using the `anthropic` Python SDK (new dependency — not yet in `requirements.txt`).
-- **Requests are routed to DeepSeek**, not Anthropic, via `ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic` (already set locally) and `ANTHROPIC_API_KEY` (already set locally) — both already present as env vars. DeepSeek offers an Anthropic-compatible endpoint; the SDK and request/response shape are the real Anthropic Messages API, only the backend model differs. This is a deliberate cost-saving choice for a repeatedly-demoed portfolio project — same agent-building mechanics you'd use with native Claude, cheaper inference.
-- **Model:** `deepseek-chat` (DeepSeek-V3.2, non-reasoning, supports function calling).
-- ⚠️ **Risk flag, not yet verified:** tool-calling behavior on DeepSeek's Anthropic-compatible endpoint hasn't been confirmed to match Claude's tool-use semantics exactly (forced `tool_choice`, multi-turn tool results, etc.). First backlog task should be a small spike proving a single tool-call round-trip works end-to-end before building the full loop.
+- **Built against the Anthropic Messages API contract**, using the `anthropic` Python SDK.
+- **Model: Claude Haiku 4.5** (`claude-haiku-4-5-20251001`), extended thinking off — real Anthropic API, using existing prepaid credits rather than DeepSeek. `ANTHROPIC_BASE_URL` defaults to `https://api.anthropic.com` (optional in config, can be overridden).
+- **Planned pivot to DeepSeek later**, once those credits run out — `ANTHROPIC_BASE_URL` was originally going to point at DeepSeek's Anthropic-compatible endpoint for cost savings on a repeatedly-demoed project. That's still the eventual plan, just not the starting point. `ANTHROPIC_BASE_URL` stays a configurable setting specifically so that pivot is a one-line env var change, not a code change. When it happens, the tool-calling smoke test (below) needs re-running against DeepSeek specifically — passing against real Claude doesn't guarantee DeepSeek's Anthropic-compatible endpoint matches tool-use semantics exactly.
 - **No SDK-managed agent loop.** The tool-use loop (call model → inspect response for `tool_use` blocks → execute the matching Python function → send `tool_result` back → repeat) is hand-written in application code, on purpose, so every step of "what makes this agentic" is visible and readable — not hidden inside a framework.
 - **Temperature: low** (proposed default `0.2`) — the point is grounded, consistent analysis of real data, not creative variation.
 - **Loop safety cap:** hard limit of ~6 tool-call round trips per analysis before forcing a final text response, to bound latency/cost.
@@ -160,7 +159,7 @@ Kept here for traceability — if you're wondering "why did we do it this way," 
 | Agent interaction | One-shot button, not chat | Keeps scope small; no conversation state to manage |
 | Agent persistence | None (ephemeral) | Avoids added DB cost for a portfolio project |
 | Agent build method | Hand-rolled loop against raw Messages API | User's first agent build — process must stay visible, not abstracted by an SDK |
-| Agent backend | DeepSeek via Anthropic-compatible endpoint | Existing env vars, real cost savings, same API contract/mechanics as Claude |
+| Agent backend | Real Anthropic API, Claude Haiku 4.5, no extended thinking | Existing prepaid Anthropic credits available; use those before pivoting to DeepSeek for ongoing cost savings once they're spent. `ANTHROPIC_BASE_URL` stays configurable so that pivot is a one-line env var change |
 | Agent knowledge scope | Portfolio data + general knowledge | More insightful output; mitigated with a "no prescriptive advice" system prompt constraint and disclaimer |
 | Agent temperature | Low (~0.2) | Grounded, consistent analysis over creative variation |
 
@@ -171,5 +170,5 @@ Kept here for traceability — if you're wondering "why did we do it this way," 
 - Whether to eventually persist agent analyses (`AgentReport` table) for a history view.
 - Whether to add a per-holding detail page/route once there's more to put on it.
 - Whether YTD/ALL ranges become worth adding once enough snapshot history exists.
-- Whether DeepSeek's tool-calling parity holds up in practice, or whether the loop needs DeepSeek-specific handling.
+- When to pivot from Claude Haiku 4.5 to DeepSeek (once prepaid Anthropic credits run out), and whether DeepSeek's tool-calling parity holds up when that happens.
 - Whether to extend the Twelve Data backfill window beyond 30 days, or move backfill to a background task if the synchronous trade-creation delay becomes annoying.

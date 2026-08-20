@@ -82,12 +82,13 @@ Exposes the data from Sprint 1 and visualizes it.
 
 ## Sprint 3 — Agent foundation
 
-Proves the DeepSeek/Anthropic-contract mechanics work, then builds the tool-use loop. No app integration yet.
+Proves the Anthropic-contract mechanics work, then builds the tool-use loop. No app integration yet.
 
-- [ ] **3.1 — Spike: DeepSeek tool-calling smoke test**.
-  - Add `anthropic` to `requirements.txt`; config wiring for `ANTHROPIC_API_KEY`/`ANTHROPIC_BASE_URL` (already set locally, but should be documented in `.env.example` and read via `app/core/config.py`).
-  - `tests/test_agent_smoke.py`: one test that sends a single message with one trivial tool defined (e.g. an `add(a, b)` tool) and asserts a `tool_use` block comes back with the right input — proves tool-calling actually works against the DeepSeek endpoint before anything else is built on top of that assumption.
-  - One commit. **This is a checkpoint** — if DeepSeek's tool-calling semantics don't match what the loop needs, surface that before Sprint 3 continues, not after.
+- [x] **3.1 — Spike: tool-calling smoke test**.
+  - Add `anthropic` to `requirements.txt`; config wiring for `ANTHROPIC_API_KEY`/`ANTHROPIC_BASE_URL` via `app/core/config.py`, documented in `.env.example`.
+  - `tests/test_agent_smoke.py`: one test that sends a single message with one trivial tool defined (`add(a, b)`) and asserts a `tool_use` block comes back with the right input.
+  - **Plan changed**: originally targeted DeepSeek's Anthropic-compatible endpoint (`ANTHROPIC_BASE_URL` pointed there). First run hit a real, useful checkpoint failure — 401, the configured `ANTHROPIC_API_KEY` was Anthropic-shaped, not a valid DeepSeek key. Decided to pivot to the real Anthropic API with Claude Haiku 4.5 (`claude-haiku-4-5-20251001`, no extended thinking) instead, using existing prepaid credits, with possible DeepSeek pivot once those credits run out. `anthropic_base_url` now defaults to `https://api.anthropic.com` in config rather than being required, so that later pivot is a one-line env var change. Test passed against real Claude on the first try after the pivot.
+  - One commit.
 
 - [ ] **3.2 — Tool implementations**: the three portfolio tools as plain Python functions + their Anthropic tool-schema definitions.
   - `get_holdings`, `get_price_history`, `get_trade_history` — likely in a new `app/services/agent_tools.py`.
@@ -96,8 +97,8 @@ Proves the DeepSeek/Anthropic-contract mechanics work, then builds the tool-use 
   - One commit. Depends on Sprint 1/2 data model (uses `PriceSnapshot`, `Holding`, `Trade`).
 
 - [ ] **3.3 — Agent loop**: the hand-rolled tool-use loop.
-  - New module (e.g. `app/services/agent_service.py`): system prompt (analytical-not-prescriptive constraint + disclaimer instruction), `deepseek-chat` model, temperature `0.2`, loop cap of 6 round trips, dispatches `tool_use` blocks to the functions from 3.2, returns final text.
-  - Test with the real client against a live/mocked portfolio (decide during implementation whether to mock the API call or let this one hit DeepSeek for real, given it's inherently an integration point).
+  - New module (e.g. `app/services/agent_service.py`): system prompt (analytical-not-prescriptive constraint + disclaimer instruction), `claude-haiku-4-5-20251001` model, temperature `0.2`, loop cap of 6 round trips, dispatches `tool_use` blocks to the functions from 3.2, returns final text.
+  - Test with the real client against a live/mocked portfolio (decide during implementation whether to mock the API call or let this one hit the real API, given it's inherently an integration point — same trade-off as 3.1, real credits get spent per test run either way).
   - One commit. Depends on 3.1, 3.2.
 
 **Sprint 3 exit criteria**: a Python-level call to the agent service, given a portfolio_id, returns a coherent analysis string, with tool calls visibly happening in between (e.g. via logging).
@@ -110,7 +111,7 @@ Wires the agent into the app.
 
 - [ ] **4.1 — Analyze endpoint**: `POST /portfolios/{portfolio_id}/analyze`.
   - Ownership check (existing pattern), calls the Sprint 3 agent service, returns the report text. No persistence (ephemeral, per spec).
-  - Route test — likely mocking the agent service call so tests don't hit DeepSeek.
+  - Route test — likely mocking the agent service call so tests don't hit the real API.
   - One commit.
 
 - [ ] **4.2 — Frontend "Analyze portfolio" UI**.
