@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from app.models.holding import Holding
     from app.models.user import User
+    from app.models.portfolio_snapshot import PortfolioSnapshot
 
 
 class Portfolio(Base, TimestampMixin):
@@ -19,3 +20,4 @@ class Portfolio(Base, TimestampMixin):
 
     owner: Mapped["User"] = relationship(back_populates="portfolios")
     holdings: Mapped[list["Holding"]] = relationship(back_populates="portfolio")
+    portfolio_snapshots: Mapped[list["PortfolioSnapshot"]] = relationship(back_populates="portfolio")
