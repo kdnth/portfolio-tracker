@@ -17,6 +17,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: []
+  saved: []
 }>()
 
 const portfolioStore = usePortfolioStore()
@@ -104,6 +105,7 @@ async function onSubmit() {
       price_per_share_cents: dollarsToCents(form.priceDollars),
       executed_at: new Date(form.executedAt).toISOString(),
     })
+    emit('saved')
     emit('close')
   } catch (error) {
     formError.value = getApiErrorMessage(error, 'Unable to record trade.')

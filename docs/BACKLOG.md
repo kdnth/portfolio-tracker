@@ -35,7 +35,7 @@ Gets real Finnhub price data flowing into the database on a schedule. No API/UI 
   - One commit. Depends on 1.3.
   - Follow-up: added startup/shutdown/skip/completion logging and made the first poll run immediately on startup instead of waiting a full interval — the market-hours skip was otherwise invisible.
 
-- [ ] **1.5 — Historical backfill via Twelve Data** *(added after Sprint 1 shipped — see spec's "Historical backfill" section)*.
+- [x] **1.5 — Historical backfill via Twelve Data** *(added after Sprint 1 shipped — see spec's "Historical backfill" section)*.
   - `app/core/config.py` / `.env.example`: add `twelve_data_api_key` / `TWELVE_DATA_API_KEY`.
   - `app/services/twelvedata_service.py`: `get_daily_history(ticker, days=30) -> list[...]` wrapping Twelve Data's `/time_series` (`interval=1day`, `outputsize=30`), mirroring `finnhub_service.py`'s style — typed result, raises a clear exception on Twelve Data's error-shaped 200 responses. Unit tests with mocked HTTP, no live calls.
   - `app/services/price_service.py` (or `trade_service.py`): on new-`Holding` creation, if no `PriceSnapshot` exists yet for that ticker anywhere, call the backfill and write one `PriceSnapshot` per day (`as_of` = that day's 4:00pm ET, converted to UTC), reusing the existing `ON CONFLICT DO NOTHING` idempotency. Failure is caught and logged — never fails the trade.
@@ -72,7 +72,7 @@ Exposes the data from Sprint 1 and visualizes it.
   - Also picked up proper error surfacing on both charts (`error` prop + `AppAlert`, was previously a silent failure) as part of this same commit.
   - One commit. Depends on 2.1, 2.2.
 
-- [ ] **2.5 — P&L display**: unrealized gain/loss ($ and %) per holding and portfolio total. **Not yet done** — was mistakenly treated as part of "Sprint 2 closed out" after 2.4 shipped; it wasn't actually built. Still open.
+- [ ] **2.5 — P&L display**: unrealized gain/loss ($ and %) per holding and portfolio total.
   - Pure computation from existing `avg_cost_basis_cents`/`current_price_cents` (extend `frontend/src/utils/money.ts`), rendered in the holdings table and portfolio header.
   - No backend change needed. One commit, independent of 2.1–2.4.
 

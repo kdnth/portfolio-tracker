@@ -45,6 +45,16 @@ function selectRange(range: PerformanceRange) {
   emit('range-change', range)
 }
 
+/** Re-fetches at whichever range is currently selected, without changing it --
+ * for a parent to call after something outside this component (e.g. a new trade)
+ * changes the underlying data. Refetching at a hardcoded default instead would
+ * desync the highlighted range button from what's actually displayed. */
+function refresh() {
+  emit('range-change', selectedRange.value)
+}
+
+defineExpose({ refresh })
+
 const chartData = computed(() => ({
   datasets: [
     {

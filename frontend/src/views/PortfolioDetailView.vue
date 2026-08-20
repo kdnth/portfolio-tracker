@@ -1,14 +1,22 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch, type ComponentPublicInstance } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
 import PerformanceChart from '@/components/portfolio/PerformanceChart.vue'
 import RecordTradeModal from '@/components/portfolio/RecordTradeModal.vue'
 import AppAlert from '@/components/ui/AppAlert.vue'
 import AppButton from '@/components/ui/AppButton.vue'
-import { usePortfolioStore, type PerformanceRange } from '@/stores/portfolio'
+import { usePortfolioStore, type Holding, type PerformanceRange } from '@/stores/portfolio'
 import { getApiErrorMessage } from '@/utils/apiError'
-import { formatCents, holdingMarketValueCents } from '@/utils/money'
+import {
+  formatCents,
+  formatPercent,
+  formatSignedCents,
+  holdingCostBasisCents,
+  holdingMarketValueCents,
+  unrealizedGainCents,
+  unrealizedGainPercent,
+} from '@/utils/money'
 
 const route = useRoute()
 const portfolioStore = usePortfolioStore()
@@ -20,6 +28,14 @@ const expandedHoldingIds = ref<Set<number>>(new Set())
 const portfolioPerformanceError = ref('')
 const holdingPerformanceErrors = ref<Record<number, string>>({})
 
+type PerformanceChartInstance = InstanceType<typeof PerformanceChart>
+const portfolioChartRef = ref<PerformanceChartInstance | null>(null)
+const holdingChartRefs: Record<number, PerformanceChartInstance | null> = {}
+
+function setHoldingChartRef(holdingId: number, el: Element | ComponentPublicInstance | null) {
+  holdingChartRefs[holdingId] = el as PerformanceChartInstance | null
+}
+
 const portfolioId = computed(() => Number(route.params.portfolioId))
 
 const totalMarketValueCents = computed(() =>
@@ -28,6 +44,35 @@ const totalMarketValueCents = computed(() =>
     0,
   ),
 )
+
+const totalCostBasisCents = computed(() =>
+  portfolioStore.currentHoldings.reduce(
+    (sum, holding) => sum + holdingCostBasisCents(holding.shares, holding.avg_cost_basis_cents),
+    0,
+  ),
+)
+
+const totalGainCents = computed(() =>
+  unrealizedGainCents(totalMarketValueCents.value, totalCostBasisCents.value),
+)
+
+const totalGainPercent = computed(() =>
+  unrealizedGainPercent(totalGainCents.value, totalCostBasisCents.value),
+)
+
+function holdingGainCents(holding: Holding) {
+  return unrealizedGainCents(
+    holdingMarketValueCents(holding.shares, holding.current_price_cents),
+    holdingCostBasisCents(holding.shares, holding.avg_cost_basis_cents),
+  )
+}
+
+function holdingGainPercent(holding: Holding) {
+  return unrealizedGainPercent(
+    holdingGainCents(holding),
+    holdingCostBasisCents(holding.shares, holding.avg_cost_basis_cents),
+  )
+}
 
 const portfolioChartPoints = computed(() =>
   portfolioStore.portfolioPerformance.map((point) => ({
@@ -64,6 +109,17 @@ function holdingChartPoints(holdingId: number) {
     as_of: point.as_of,
     value_cents: point.price_cents,
   }))
+}
+
+function onTradeRecorded() {
+  // Trades can change portfolio value immediately, and can trigger a server-side
+  // historical backfill for a brand-new ticker -- neither is reflected in chart
+  // data already sitting in the store, so both charts need an explicit refresh.
+  // .refresh() re-fetches at whichever range each chart already has selected.
+  portfolioChartRef.value?.refresh()
+  for (const holdingId of expandedHoldingIds.value) {
+    holdingChartRefs[holdingId]?.refresh()
+  }
 }
 
 function toggleHoldingExpanded(holdingId: number) {
@@ -136,6 +192,13 @@ onUnmounted(() => {
           <p class="mt-1 text-sm text-ink-muted">
             Market value
             <span class="font-semibold text-ink">{{ formatCents(totalMarketValueCents) }}</span>
+            <span
+              v-if="totalCostBasisCents > 0"
+              class="ml-2 font-medium"
+              :class="totalGainCents >= 0 ? 'text-accent' : 'text-danger'"
+            >
+              {{ formatSignedCents(totalGainCents) }} ({{ formatPercent(totalGainPercent) }})
+            </span>
           </p>
         </div>
 
@@ -145,6 +208,7 @@ onUnmounted(() => {
       <div class="mt-6 rounded-2xl border border-border bg-surface p-5">
         <h2 class="text-sm font-semibold text-ink-muted">Performance</h2>
         <PerformanceChart
+          ref="portfolioChartRef"
           class="mt-2"
           :points="portfolioChartPoints"
           :loading="portfolioStore.portfolioPerformanceLoading"
@@ -179,6 +243,7 @@ onUnmounted(() => {
               <th class="px-5 py-3 font-medium">Avg cost</th>
               <th class="px-5 py-3 font-medium">Price</th>
               <th class="px-5 py-3 font-medium">Market value</th>
+              <th class="px-5 py-3 font-medium">Unrealized P&amp;L</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-border">
@@ -222,10 +287,20 @@ onUnmounted(() => {
                     )
                   }}
                 </td>
+                <td
+                  class="px-5 py-3.5 tabular-nums font-medium"
+                  :class="holdingGainCents(holding) >= 0 ? 'text-accent' : 'text-danger'"
+                >
+                  {{ formatSignedCents(holdingGainCents(holding)) }}
+                  <span class="text-xs font-normal opacity-80">
+                    ({{ formatPercent(holdingGainPercent(holding)) }})
+                  </span>
+                </td>
               </tr>
               <tr v-if="expandedHoldingIds.has(holding.id)" :id="`holding-performance-${holding.id}`">
-                <td colspan="5" class="bg-canvas/40 px-5 py-4">
+                <td colspan="6" class="bg-canvas/40 px-5 py-4">
                   <PerformanceChart
+                    :ref="(el) => setHoldingChartRef(holding.id, el)"
                     :points="holdingChartPoints(holding.id)"
                     :loading="!!portfolioStore.holdingPerformanceLoading[holding.id]"
                     :error="holdingPerformanceErrors[holding.id] || null"
@@ -243,6 +318,7 @@ onUnmounted(() => {
         :open="tradeOpen"
         :portfolio-id="portfolioId"
         @close="tradeOpen = false"
+        @saved="onTradeRecorded"
       />
     </template>
   </div>
