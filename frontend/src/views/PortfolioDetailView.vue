@@ -2,6 +2,7 @@
 import { computed, onUnmounted, ref, watch, type ComponentPublicInstance } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
+import AnalysisModal from '@/components/portfolio/AnalysisModal.vue'
 import PerformanceChart from '@/components/portfolio/PerformanceChart.vue'
 import RecordTradeModal from '@/components/portfolio/RecordTradeModal.vue'
 import AppAlert from '@/components/ui/AppAlert.vue'
@@ -24,6 +25,7 @@ const portfolioStore = usePortfolioStore()
 const loadError = ref('')
 const loading = ref(true)
 const tradeOpen = ref(false)
+const analysisOpen = ref(false)
 const expandedHoldingIds = ref<Set<number>>(new Set())
 const portfolioPerformanceError = ref('')
 const holdingPerformanceErrors = ref<Record<number, string>>({})
@@ -202,7 +204,10 @@ onUnmounted(() => {
           </p>
         </div>
 
-        <AppButton @click="tradeOpen = true">Record trade</AppButton>
+        <div class="flex gap-2">
+          <AppButton variant="secondary" @click="analysisOpen = true">Analyze portfolio</AppButton>
+          <AppButton @click="tradeOpen = true">Record trade</AppButton>
+        </div>
       </div>
 
       <div class="mt-6 rounded-2xl border border-border bg-surface p-5">
@@ -319,6 +324,12 @@ onUnmounted(() => {
         :portfolio-id="portfolioId"
         @close="tradeOpen = false"
         @saved="onTradeRecorded"
+      />
+
+      <AnalysisModal
+        :open="analysisOpen"
+        :portfolio-id="portfolioId"
+        @close="analysisOpen = false"
       />
     </template>
   </div>

@@ -106,6 +106,11 @@ export const usePortfolioStore = defineStore('portfolio', () => {
     }
   }
 
+  async function analyzePortfolio(portfolioId: number): Promise<string> {
+    const response = await apiClient.post<{ report: string }>(`/portfolios/${portfolioId}/analyze`)
+    return response.data.report
+  }
+
   function clearCurrent() {
     currentPortfolio.value = null
     currentHoldings.value = []
@@ -128,6 +133,7 @@ export const usePortfolioStore = defineStore('portfolio', () => {
     createTrade,
     fetchPortfolioPerformance,
     fetchHoldingPerformance,
+    analyzePortfolio,
     clearCurrent,
   }
 })
