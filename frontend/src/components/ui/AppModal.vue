@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, watch } from 'vue'
 
-const props = defineProps<{
-  open: boolean
-  title: string
-}>()
+const props = withDefaults(
+  defineProps<{
+    open: boolean
+    title: string
+    size?: 'md' | 'lg'
+  }>(),
+  { size: 'md' },
+)
 
 const emit = defineEmits<{
   close: []
@@ -50,7 +54,8 @@ onUnmounted(() => {
       />
 
       <div
-        class="relative z-10 w-full max-w-md rounded-2xl border border-border bg-surface p-6 shadow-lg"
+        class="relative z-10 flex max-h-[85vh] w-full flex-col overflow-y-auto rounded-2xl border border-border bg-surface p-6 shadow-lg"
+        :class="size === 'lg' ? 'max-w-2xl' : 'max-w-md'"
       >
         <div class="mb-5 flex items-start justify-between gap-4">
           <h2 class="text-lg font-semibold tracking-tight text-ink">{{ title }}</h2>
