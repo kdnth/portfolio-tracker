@@ -6,7 +6,9 @@ from app.core.exceptions import NoSuchElementException
 from app.db.session import get_db
 from app.models import User
 from app.schemas.holding import HoldingResponse
+from app.schemas.performance import PerformanceRange, PricePoint
 from app.services.holding_service import list_holdings_for_portfolio
+from app.services.performance_service import get_holding_performance
 from app.services.portfolio_service import get_owned_portfolio
 
 router = APIRouter(prefix="/portfolios/{portfolio_id}/holdings", tags=["holdings"])
@@ -19,3 +21,21 @@ def list_holdings_route(portfolio_id: int, current_user: User = Depends(get_curr
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found")
 
     return list_holdings_for_portfolio(db=db, portfolio_id=portfolio_id)
+
+@router.get("/{holding_id}/performance", response_model=list[PricePoint])
+def get_holding_performance_route(
+        portfolio_id: int,
+        holding_id: int,
+        range: PerformanceRange = "1M",
+        current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db),
+):
+    try:
+        get_owned_portfolio(db=db, user_id=current_user.id, portfolio_id=portfolio_id)
+    except NoSuchElementException:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found")
+
+    try:
+        return get_holding_performance(db=db, portfolio_id=portfolio_id, holding_id=holding_id, range_=range)
+    except NoSuchElementException:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Holding not found")

@@ -5,7 +5,9 @@ from app.core.deps import get_current_user
 from app.core.exceptions import NoSuchElementException
 from app.db.session import get_db
 from app.models.user import User
+from app.schemas.performance import PerformanceRange, PortfolioValuePoint
 from app.schemas.portfolio import PortfolioResponse, PortfolioCreate
+from app.services.performance_service import get_portfolio_performance
 from app.services.portfolio_service import create_portfolio, get_owned_portfolio, list_portfolios_for_user
 
 router = APIRouter(prefix="/portfolios", tags=["portfolios"])
@@ -29,3 +31,17 @@ def get_portfolio_route(portfolio_id: int, current_user: User = Depends(get_curr
 @router.get("/", response_model=list[PortfolioResponse])
 def get_portfolios_route(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     return list_portfolios_for_user(db=db, user_id=current_user.id)
+
+@router.get("/{portfolio_id}/performance", response_model=list[PortfolioValuePoint])
+def get_portfolio_performance_route(
+        portfolio_id: int,
+        range: PerformanceRange = "1M",
+        current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db),
+):
+    try:
+        get_owned_portfolio(db=db, user_id=current_user.id, portfolio_id=portfolio_id)
+    except NoSuchElementException:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found")
+
+    return get_portfolio_performance(db=db, portfolio_id=portfolio_id, range_=range)
