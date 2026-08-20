@@ -13,6 +13,7 @@ import {
 import 'chartjs-adapter-date-fns'
 import { Line } from 'vue-chartjs'
 
+import AppAlert from '@/components/ui/AppAlert.vue'
 import type { PerformanceRange } from '@/stores/portfolio'
 
 ChartJS.register(TimeScale, LinearScale, LineElement, PointElement, Tooltip, Filler)
@@ -23,10 +24,12 @@ const props = withDefaults(
   defineProps<{
     points: { as_of: string; value_cents: number }[]
     loading?: boolean
+    error?: string | null
     label?: string
   }>(),
   {
     loading: false,
+    error: null,
     label: 'Value',
   },
 )
@@ -36,7 +39,8 @@ const emit = defineEmits<{ 'range-change': [range: PerformanceRange] }>()
 const selectedRange = ref<PerformanceRange>('1M')
 
 function selectRange(range: PerformanceRange) {
-  if (range === selectedRange.value) return
+  // Re-emits even for the already-selected range so a range button doubles as
+  // a retry action when the last fetch for it failed.
   selectedRange.value = range
   emit('range-change', range)
 }
@@ -114,6 +118,9 @@ const chartOptions = computed<ChartOptions<'line'>>(() => ({
       <p v-if="loading" class="flex h-full items-center justify-center text-sm text-ink-muted">
         Loading…
       </p>
+      <div v-else-if="error" class="flex h-full items-center">
+        <AppAlert class="w-full">{{ error }}</AppAlert>
+      </div>
       <p
         v-else-if="points.length === 0"
         class="flex h-full items-center justify-center text-sm text-ink-muted"
