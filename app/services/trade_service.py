@@ -24,7 +24,11 @@ def create_trade(db: Session, portfolio_id: int, payload: TradeCreate) -> Trade:
         )
         db.add(holding)
         db.flush()
-        backfill_ticker_history_if_new(db, payload.ticker)
+
+    # Not just for brand-new holdings: if an earlier attempt failed (e.g. rate limited),
+    # the ticker still has no history, and this call is a cheap no-op once it succeeds
+    # (backfill_ticker_history_if_new checks for existing history before doing anything).
+    backfill_ticker_history_if_new(db, payload.ticker)
 
     if payload.trade_type == TradeOptions.BUY:
         total_existing_cost = holding.shares * holding.avg_cost_basis_cents
@@ -38,6 +42,7 @@ def create_trade(db: Session, portfolio_id: int, payload: TradeCreate) -> Trade:
     else: # sell
         if payload.shares > holding.shares:
             raise NoSuchElementException()
+
         holding.shares -= payload.shares
 
     holding.current_price_cents = payload.price_per_share_cents

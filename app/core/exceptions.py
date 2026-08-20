@@ -12,3 +12,6 @@ class BadCredentialsException(ServiceException):
 
 class PriceUnavailableException(ServiceException):
     pass
+
+class RateLimitExceededException(ServiceException):
+    pass

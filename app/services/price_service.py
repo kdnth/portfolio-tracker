@@ -6,7 +6,7 @@ import httpx
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import PriceUnavailableException
+from app.core.exceptions import PriceUnavailableException, RateLimitExceededException
 from app.models import Holding, PortfolioSnapshot, PriceSnapshot
 from app.services.finnhub_service import QuoteResult, get_quote
 from app.services.twelvedata_service import DailyClose, get_daily_history
@@ -70,6 +70,13 @@ def backfill_ticker_history_if_new(db: Session, ticker: str) -> None:
 
     try:
         daily_closes = get_daily_history(ticker)
+    except RateLimitExceededException:
+        logger.warning(
+            "Historical backfill skipped for ticker '%s': Twelve Data rate limit reached "
+            "(will retry on the next trade recorded for this ticker)",
+            ticker,
+        )
+        return
     except (PriceUnavailableException, httpx.HTTPError):
         logger.warning("Historical backfill unavailable for new ticker '%s'", ticker)
         return
