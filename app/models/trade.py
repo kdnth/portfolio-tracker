@@ -3,6 +3,7 @@ import enum
 from sqlalchemy import ForeignKey, Enum, Numeric, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import  datetime
+from decimal import Decimal
 
 from app.db.session import Base
 from app.models.base import TimestampMixin
@@ -21,7 +22,7 @@ class Trade(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(primary_key=True)
     holding_id: Mapped[int] = mapped_column(ForeignKey("holdings.id"))
     trade_type: Mapped[TradeOptions] = mapped_column(Enum(TradeOptions))
-    shares: Mapped[float] = mapped_column(Numeric(precision=18, scale=6))
+    shares: Mapped[Decimal] = mapped_column(Numeric(precision=18, scale=6))
     price_per_share_cents: Mapped[int] = mapped_column(Integer)
     executed_at: Mapped[datetime] = mapped_column()
 
