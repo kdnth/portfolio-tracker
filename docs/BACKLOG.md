@@ -12,29 +12,37 @@ Checkboxes track status: `[ ]` not started, `[~]` in progress, `[x]` done (merge
 
 Gets real Finnhub price data flowing into the database on a schedule. No API/UI yet — this sprint is plumbing.
 
-- [ ] **1.1 — Data model**: `PriceSnapshot` and `PortfolioSnapshot` SQLAlchemy models + Alembic migration.
+- [x] **1.1 — Data model**: `PriceSnapshot` and `PortfolioSnapshot` SQLAlchemy models + Alembic migration.
   - `app/models/price_snapshot.py`, `app/models/portfolio_snapshot.py`, migration in `alembic/versions/`.
   - One commit: models + migration together (migration is meaningless without the models it targets).
 
-- [ ] **1.2 — Finnhub client + config**: a thin client wrapping `/quote`, plus config wiring.
+- [x] **1.2 — Finnhub client + config**: a thin client wrapping `/quote`, plus config wiring.
   - `app/core/config.py`: add `finnhub_api_key`.
   - `.env.example`: add `FINNHUB_API_KEY`.
   - `app/services/finnhub_service.py`: `get_quote(ticker) -> QuoteResult` (price, timestamp), using `httpx` (already a dependency).
   - Unit test with a mocked HTTP response — no live API calls in tests.
   - One commit.
 
-- [ ] **1.3 — Poll cycle logic**: the function a scheduler will eventually call.
+- [x] **1.3 — Poll cycle logic**: the function a scheduler will eventually call.
   - `app/services/price_service.py` (or extend `finnhub_service.py`): given all distinct tickers across holdings, fetch quotes, write `PriceSnapshot` rows, update each `Holding.current_price_cents`/`last_priced_at`, compute + write `PortfolioSnapshot` rows per portfolio.
   - Tests against the transactional Postgres fixture (existing pattern in `tests/conftest.py`), Finnhub client mocked.
   - One commit. Depends on 1.1 and 1.2.
 
-- [ ] **1.4 — Scheduler wiring**: APScheduler job that calls 1.3 on an interval, market-hours aware.
+- [x] **1.4 — Scheduler wiring**: APScheduler job that calls 1.3 on an interval, market-hours aware.
   - New module (e.g. `app/core/scheduler.py`): weekday + 9:30am–4:00pm ET window check, 15-minute interval trigger.
   - Wire into `app/main.py` startup/shutdown (start scheduler on app startup, shut down cleanly).
   - Test the market-hours predicate directly (pure function, easy to unit test with fixed datetimes) — don't test the scheduler itself running on a timer.
   - One commit. Depends on 1.3.
+  - Follow-up: added startup/shutdown/skip/completion logging and made the first poll run immediately on startup instead of waiting a full interval — the market-hours skip was otherwise invisible.
 
-**Sprint 1 exit criteria**: running the app locally, the scheduler fires during market hours and `price_snapshots`/`portfolio_snapshots` rows appear; `holdings.current_price_cents` updates independent of trades.
+- [ ] **1.5 — Historical backfill via Twelve Data** *(added after Sprint 1 shipped — see spec's "Historical backfill" section)*.
+  - `app/core/config.py` / `.env.example`: add `twelve_data_api_key` / `TWELVE_DATA_API_KEY`.
+  - `app/services/twelvedata_service.py`: `get_daily_history(ticker, days=30) -> list[...]` wrapping Twelve Data's `/time_series` (`interval=1day`, `outputsize=30`), mirroring `finnhub_service.py`'s style — typed result, raises a clear exception on Twelve Data's error-shaped 200 responses. Unit tests with mocked HTTP, no live calls.
+  - `app/services/price_service.py` (or `trade_service.py`): on new-`Holding` creation, if no `PriceSnapshot` exists yet for that ticker anywhere, call the backfill and write one `PriceSnapshot` per day (`as_of` = that day's 4:00pm ET, converted to UTC), reusing the existing `ON CONFLICT DO NOTHING` idempotency. Failure is caught and logged — never fails the trade.
+  - Tests: trade-creation test asserting a first-time ticker gets backfilled (Twelve Data mocked); asserting a second holding of an already-tracked ticker does *not* trigger a second backfill call; asserting a Twelve Data failure still lets the trade succeed.
+  - One commit, maybe two if the trade-service integration is cleaner split from the Twelve Data client itself.
+
+**Sprint 1 exit criteria**: running the app locally, the scheduler fires during market hours and `price_snapshots`/`portfolio_snapshots` rows appear; `holdings.current_price_cents` updates independent of trades. *(Met as of 1.4; 1.5 is a later addition, not a blocker on the original criteria.)*
 
 ---
 
@@ -42,32 +50,33 @@ Gets real Finnhub price data flowing into the database on a schedule. No API/UI 
 
 Exposes the data from Sprint 1 and visualizes it.
 
-- [ ] **2.1 — Performance API endpoints**: read endpoints for chart data.
+- [x] **2.1 — Performance API endpoints**: read endpoints for chart data.
   - `GET /portfolios/{portfolio_id}/performance?range=1D|1W|1M` → `PortfolioSnapshot` series.
   - `GET /portfolios/{portfolio_id}/holdings/{holding_id}/performance?range=1D|1W|1M` → `PriceSnapshot` series for that holding's ticker.
   - New schemas in `app/schemas/`, service functions, routes following the existing ownership-scoped 404 pattern.
   - Route tests mirroring `tests/test_portfolios.py` / `tests/test_holding.py` conventions.
   - One commit.
 
-- [ ] **2.2 — Frontend data layer**: chart library + API/store wiring, no UI yet.
+- [x] **2.2 — Frontend data layer**: chart library + API/store wiring, no UI yet.
   - `npm install chart.js vue-chartjs` in `frontend/`.
-  - `frontend/src/api/`: calls for the two new endpoints.
-  - `frontend/src/stores/portfolio.ts` (or a new store): state + actions for performance series, range selection.
+  - `frontend/src/stores/portfolio.ts`: state + actions for performance series, range selection. (No separate `api/` files — this codebase's actual convention is API calls living directly in the Pinia store, not a per-resource api layer.)
   - One commit.
 
-- [ ] **2.3 — Portfolio-level chart**: renders on `PortfolioDetailView`.
-  - New component (e.g. `frontend/src/components/portfolio/PerformanceChart.vue`), range toggle (1D/1W/1M), loading/empty states.
+- [x] **2.3 — Portfolio-level chart**: renders on `PortfolioDetailView`.
+  - `frontend/src/components/portfolio/PerformanceChart.vue`, range toggle (1D/1W/1M), loading/empty states.
+  - Also picked up `chartjs-adapter-date-fns` + `TimeScale` here instead of `CategoryScale` (decided mid-task — see spec) so the x-axis positions points by real timestamp, which matters once 1.5's daily-vs-intraday resolution seam exists.
   - One commit. Depends on 2.1, 2.2.
 
-- [ ] **2.4 — Per-holding chart (expand-in-place)**: click a holdings-table row to reveal that ticker's chart inline.
-  - Extends the existing table in `PortfolioDetailView.vue` — expandable row or popover, reusing the chart component from 2.3 where possible.
+- [x] **2.4 — Per-holding chart (expand-in-place)**: click a holdings-table row to reveal that ticker's chart inline.
+  - Extends the existing table in `PortfolioDetailView.vue` — ticker cell is a button with an expand chevron; multiple holdings can be expanded at once. Reuses the `PerformanceChart` component from 2.3 unchanged.
+  - Also picked up proper error surfacing on both charts (`error` prop + `AppAlert`, was previously a silent failure) as part of this same commit.
   - One commit. Depends on 2.1, 2.2.
 
-- [ ] **2.5 — P&L display**: unrealized gain/loss ($ and %) per holding and portfolio total.
+- [ ] **2.5 — P&L display**: unrealized gain/loss ($ and %) per holding and portfolio total. **Not yet done** — was mistakenly treated as part of "Sprint 2 closed out" after 2.4 shipped; it wasn't actually built. Still open.
   - Pure computation from existing `avg_cost_basis_cents`/`current_price_cents` (extend `frontend/src/utils/money.ts`), rendered in the holdings table and portfolio header.
-  - No backend change needed. One commit, independent of 2.1–2.4 (can land anytime after Sprint 1, even in parallel).
+  - No backend change needed. One commit, independent of 2.1–2.4.
 
-**Sprint 2 exit criteria**: opening a portfolio shows a live-updating performance chart and per-holding charts backed by real Finnhub data, plus visible P&L.
+**Sprint 2 exit criteria**: opening a portfolio shows a live-updating performance chart and per-holding charts backed by real Finnhub data, plus visible P&L. *(Chart criteria met; P&L criterion still open via 2.5.)*
 
 ---
 
@@ -116,7 +125,7 @@ Wires the agent into the app.
 
 Carried over from the spec's out-of-scope lists — not forgotten, just deliberately deferred:
 
-- Historical price backfill / paid data plan
+- Backfill beyond the most recent 30 days (no full since-inception history); paid data plan on either API
 - YTD/ALL chart ranges
 - Holiday-aware market calendar
 - Dedicated holding detail page/route

@@ -14,7 +14,7 @@ This doc is the reference for the build. Decisions recorded here shouldn't be re
 
 ---
 
-## Feature 1: Performance Tracking (Finnhub)
+## Feature 1: Performance Tracking (Finnhub + Twelve Data)
 
 ### Goal
 
@@ -22,9 +22,9 @@ Show real market price movement for each holding and for a portfolio as a whole,
 
 ### Data source
 
-- **Finnhub free tier only.** `/quote` (current price) is available free; `/stock/candle` (historical) is not — it 403s on free keys. No paid Finnhub plan, and no second API is being added to backfill history.
-- Consequence: **there is no historical backfill.** Charts only show price movement from whenever the app starts tracking a ticker forward. This is an accepted trade-off, not a bug.
-- Config: `FINNHUB_API_KEY` env var (already named in requirements). Add to `app/core/config.py` and `.env.example`.
+- **Finnhub free tier** for live pricing. `/quote` (current price) is available free; `/stock/candle` (historical) is not — it 403s on free keys. No paid Finnhub plan.
+- **Twelve Data free tier** for a bounded historical backfill. Free tier includes `/time_series` with daily historical bars (800 API credits/day) — unlike Finnhub, whose free tier excludes historical data entirely. Used only to backfill the most recent 30 days of daily closes the first time a ticker is ever tracked; Finnhub remains the source for everything going forward from there. See "Historical backfill" below.
+- Config: `FINNHUB_API_KEY` and `TWELVE_DATA_API_KEY` env vars. Add both to `app/core/config.py` and `.env.example`.
 
 ### Price ingestion
 
@@ -36,6 +36,15 @@ Show real market price movement for each holding and for a portfolio as a whole,
   2. Write a `PriceSnapshot` row per ticker.
   3. Update each `Holding.current_price_cents` / `last_priced_at` from the new quote — **Finnhub becomes the source of truth for current price**, not the last trade. (Trades still drive share count and cost basis — that logic is unchanged.)
   4. Recompute and write one `PortfolioSnapshot` row per portfolio (sum of that portfolio's holdings' market value, using current share counts).
+
+### Historical backfill (Twelve Data)
+
+- **Trigger**: a trade creates a *new* `Holding` for a ticker (first time it's held in that portfolio) **and** no `PriceSnapshot` row exists for that ticker anywhere in the app yet (first time it's ever been tracked, across all users/portfolios). Prevents redundant backfills and wasted API credits for a ticker someone else already tracks.
+- **Runs synchronously**, inside the trade-creation request, immediately after the new `Holding` is created — matches the codebase's existing synchronous style; there's no background-task infrastructure yet and adding one just for this would be disproportionate. Trade-off, accepted: the *first* trade on a genuinely new ticker takes somewhat longer (one external API call, roughly 200–500ms) than a normal trade.
+- **Failure is non-fatal to the trade.** A Twelve Data error (bad symbol, rate limit, network failure) is logged and swallowed — the trade and holding are created regardless; that ticker simply has no history until the next live Finnhub poll picks it up. The core operation (recording a trade) must never fail because of an enrichment step.
+- **Fetches the most recent 30 daily closes** via Twelve Data's `/time_series` (`interval=1day`, `outputsize=30`). Each day's close becomes one `PriceSnapshot` row, timestamped at that day's 4:00pm ET (market close), converted to UTC for storage. Same `ON CONFLICT DO NOTHING` idempotency as the live poll cycle (Sprint 1's `_record_price_snapshot`).
+- **Resolution seam, expected not a bug**: backfilled points are one-per-day; live Finnhub-polled points are intraday (multiple per day during market hours). A 1M chart will visibly shift from daily resolution (older, backfilled) to finer intraday resolution (recent, live) — that's correct behavior given the two different data sources, not a rendering glitch.
+- **Bounded, not full history.** This is a fixed 30-day window, not since-inception backfill — YTD/ALL ranges remain out of scope (see below).
 
 ### Data model additions
 
@@ -68,7 +77,7 @@ Following the existing ownership-scoped pattern (404 on cross-user access, servi
 | `GET` | `/portfolios/{portfolio_id}/performance?range=1D\|1W\|1M` | `PortfolioSnapshot` series for the chart |
 | `GET` | `/portfolios/{portfolio_id}/holdings/{holding_id}/performance?range=1D\|1W\|1M` | `PriceSnapshot` series for that holding's ticker |
 
-Ranges supported: **1D (intraday), 1W, 1M**. YTD/ALL are explicitly out of scope for now — with no backfill, "all history" just means "since we turned this on," which isn't meaningfully different from 1M yet. Revisit once real history has accumulated.
+Ranges supported: **1D (intraday), 1W, 1M**. With the 30-day backfill, 1M is now meaningfully populated as soon as a ticker is first tracked, rather than needing weeks of live polling to accumulate. YTD/ALL remain explicitly out of scope — the backfill window is fixed at 30 days, not since-inception. Revisit once there's a reason to extend the window.
 
 ### Frontend
 
@@ -79,11 +88,11 @@ Ranges supported: **1D (intraday), 1W, 1M**. YTD/ALL are explicitly out of scope
 
 ### Explicitly out of scope (v1)
 
-- No historical backfill (free-tier limitation, accepted).
+- No backfill beyond the most recent 30 days (no full since-inception history).
 - No YTD/ALL ranges.
 - No holiday-aware market calendar (just weekday + time window).
 - No per-holding detail page/route.
-- No alternate data source / paid plan.
+- No paid data plan on either Finnhub or Twelve Data.
 
 ---
 
@@ -139,11 +148,12 @@ Kept here for traceability — if you're wondering "why did we do it this way," 
 | Decision | Choice | Why |
 |---|---|---|
 | Price ingestion | Scheduled job | Enables real history for charts; on-demand-only would mean no meaningful chart |
-| Historical backfill | None | Finnhub free tier has no historical endpoint; declined to add a second API or upgrade plan |
+| Historical backfill | Twelve Data, 30 daily closes, on first-ever tracking of a ticker | Finnhub free tier has no historical endpoint; Twelve Data's free tier genuinely includes daily `/time_series` (unlike Alpha Vantage's 25-req/day limit, too restrictive to be useful) — lets charts show real history immediately instead of waiting weeks for live polling to accumulate it. Bounded to 30 days to keep scope and API usage contained |
+| Backfill execution | Synchronous, inside the trade-creation request | Matches existing synchronous codebase style; no background-task infra exists yet and building one just for this would be disproportionate. Accepted cost: first trade on a new ticker is slower |
 | Price source of truth | Finnhub overwrites `current_price_cents` | The entire point of the feature is market-accurate value, not last-trade value |
 | History storage | Separate `PriceSnapshot` (by ticker) + `PortfolioSnapshot` (by portfolio) tables | Avoids duplicating ticker history per user; portfolio rollup precomputed for fast chart reads |
 | Poll cadence | 15 min, market-hours aware | Meaningful intraday movement without wasting calls overnight/weekends |
-| Chart ranges | 1D / 1W / 1M only | YTD/ALL not meaningful without backfill |
+| Chart ranges | 1D / 1W / 1M only | YTD/ALL would need since-inception backfill, not just the fixed 30-day window |
 | Holding chart placement | Expand-in-place on existing table | Avoids a new route/page for v1 |
 | Chart library | Chart.js + vue-chartjs | Well-documented, easy Tailwind theming, sized right for this project |
 | Agent capability | Tool-using loop, not single-shot prompt | This is the actual "agent" — the thing being demonstrated |
@@ -162,3 +172,4 @@ Kept here for traceability — if you're wondering "why did we do it this way," 
 - Whether to add a per-holding detail page/route once there's more to put on it.
 - Whether YTD/ALL ranges become worth adding once enough snapshot history exists.
 - Whether DeepSeek's tool-calling parity holds up in practice, or whether the loop needs DeepSeek-specific handling.
+- Whether to extend the Twelve Data backfill window beyond 30 days, or move backfill to a background task if the synchronous trade-creation delay becomes annoying.
