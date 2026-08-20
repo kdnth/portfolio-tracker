@@ -1,13 +1,22 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch, type ComponentPublicInstance } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
+import PerformanceChart from '@/components/portfolio/PerformanceChart.vue'
 import RecordTradeModal from '@/components/portfolio/RecordTradeModal.vue'
 import AppAlert from '@/components/ui/AppAlert.vue'
 import AppButton from '@/components/ui/AppButton.vue'
-import { usePortfolioStore } from '@/stores/portfolio'
+import { usePortfolioStore, type Holding, type PerformanceRange } from '@/stores/portfolio'
 import { getApiErrorMessage } from '@/utils/apiError'
-import { formatCents, holdingMarketValueCents } from '@/utils/money'
+import {
+  formatCents,
+  formatPercent,
+  formatSignedCents,
+  holdingCostBasisCents,
+  holdingMarketValueCents,
+  unrealizedGainCents,
+  unrealizedGainPercent,
+} from '@/utils/money'
 
 const route = useRoute()
 const portfolioStore = usePortfolioStore()
@@ -15,6 +24,17 @@ const portfolioStore = usePortfolioStore()
 const loadError = ref('')
 const loading = ref(true)
 const tradeOpen = ref(false)
+const expandedHoldingIds = ref<Set<number>>(new Set())
+const portfolioPerformanceError = ref('')
+const holdingPerformanceErrors = ref<Record<number, string>>({})
+
+type PerformanceChartInstance = InstanceType<typeof PerformanceChart>
+const portfolioChartRef = ref<PerformanceChartInstance | null>(null)
+const holdingChartRefs: Record<number, PerformanceChartInstance | null> = {}
+
+function setHoldingChartRef(holdingId: number, el: Element | ComponentPublicInstance | null) {
+  holdingChartRefs[holdingId] = el as PerformanceChartInstance | null
+}
 
 const portfolioId = computed(() => Number(route.params.portfolioId))
 
@@ -25,6 +45,96 @@ const totalMarketValueCents = computed(() =>
   ),
 )
 
+const totalCostBasisCents = computed(() =>
+  portfolioStore.currentHoldings.reduce(
+    (sum, holding) => sum + holdingCostBasisCents(holding.shares, holding.avg_cost_basis_cents),
+    0,
+  ),
+)
+
+const totalGainCents = computed(() =>
+  unrealizedGainCents(totalMarketValueCents.value, totalCostBasisCents.value),
+)
+
+const totalGainPercent = computed(() =>
+  unrealizedGainPercent(totalGainCents.value, totalCostBasisCents.value),
+)
+
+function holdingGainCents(holding: Holding) {
+  return unrealizedGainCents(
+    holdingMarketValueCents(holding.shares, holding.current_price_cents),
+    holdingCostBasisCents(holding.shares, holding.avg_cost_basis_cents),
+  )
+}
+
+function holdingGainPercent(holding: Holding) {
+  return unrealizedGainPercent(
+    holdingGainCents(holding),
+    holdingCostBasisCents(holding.shares, holding.avg_cost_basis_cents),
+  )
+}
+
+const portfolioChartPoints = computed(() =>
+  portfolioStore.portfolioPerformance.map((point) => ({
+    as_of: point.as_of,
+    value_cents: point.total_market_value_cents,
+  })),
+)
+
+async function loadPortfolioPerformance(range: PerformanceRange = '1M') {
+  if (!Number.isFinite(portfolioId.value)) return
+  portfolioPerformanceError.value = ''
+  try {
+    await portfolioStore.fetchPortfolioPerformance(portfolioId.value, range)
+  } catch (error) {
+    portfolioPerformanceError.value = getApiErrorMessage(error, 'Unable to load performance.')
+  }
+}
+
+async function loadHoldingPerformance(holdingId: number, range: PerformanceRange = '1M') {
+  if (!Number.isFinite(portfolioId.value)) return
+  holdingPerformanceErrors.value = { ...holdingPerformanceErrors.value, [holdingId]: '' }
+  try {
+    await portfolioStore.fetchHoldingPerformance(portfolioId.value, holdingId, range)
+  } catch (error) {
+    holdingPerformanceErrors.value = {
+      ...holdingPerformanceErrors.value,
+      [holdingId]: getApiErrorMessage(error, 'Unable to load performance.'),
+    }
+  }
+}
+
+function holdingChartPoints(holdingId: number) {
+  return (portfolioStore.holdingPerformance[holdingId] ?? []).map((point) => ({
+    as_of: point.as_of,
+    value_cents: point.price_cents,
+  }))
+}
+
+function onTradeRecorded() {
+  // Trades can change portfolio value immediately, and can trigger a server-side
+  // historical backfill for a brand-new ticker -- neither is reflected in chart
+  // data already sitting in the store, so both charts need an explicit refresh.
+  // .refresh() re-fetches at whichever range each chart already has selected.
+  portfolioChartRef.value?.refresh()
+  for (const holdingId of expandedHoldingIds.value) {
+    holdingChartRefs[holdingId]?.refresh()
+  }
+}
+
+function toggleHoldingExpanded(holdingId: number) {
+  const next = new Set(expandedHoldingIds.value)
+  if (next.has(holdingId)) {
+    next.delete(holdingId)
+  } else {
+    next.add(holdingId)
+    if (!portfolioStore.holdingPerformance[holdingId]) {
+      loadHoldingPerformance(holdingId)
+    }
+  }
+  expandedHoldingIds.value = next
+}
+
 async function load() {
   if (!Number.isFinite(portfolioId.value)) {
     loadError.value = 'Invalid portfolio id.'
@@ -34,11 +144,15 @@ async function load() {
 
   loading.value = true
   loadError.value = ''
+  expandedHoldingIds.value = new Set()
+  portfolioPerformanceError.value = ''
+  holdingPerformanceErrors.value = {}
   try {
     await Promise.all([
       portfolioStore.fetchPortfolio(portfolioId.value),
       portfolioStore.fetchHoldings(portfolioId.value),
     ])
+    loadPortfolioPerformance()
   } catch (error) {
     loadError.value = getApiErrorMessage(error, 'Unable to load portfolio.')
     portfolioStore.clearCurrent()
@@ -78,10 +192,30 @@ onUnmounted(() => {
           <p class="mt-1 text-sm text-ink-muted">
             Market value
             <span class="font-semibold text-ink">{{ formatCents(totalMarketValueCents) }}</span>
+            <span
+              v-if="totalCostBasisCents > 0"
+              class="ml-2 font-medium"
+              :class="totalGainCents >= 0 ? 'text-accent' : 'text-danger'"
+            >
+              {{ formatSignedCents(totalGainCents) }} ({{ formatPercent(totalGainPercent) }})
+            </span>
           </p>
         </div>
 
         <AppButton @click="tradeOpen = true">Record trade</AppButton>
+      </div>
+
+      <div class="mt-6 rounded-2xl border border-border bg-surface p-5">
+        <h2 class="text-sm font-semibold text-ink-muted">Performance</h2>
+        <PerformanceChart
+          ref="portfolioChartRef"
+          class="mt-2"
+          :points="portfolioChartPoints"
+          :loading="portfolioStore.portfolioPerformanceLoading"
+          :error="portfolioPerformanceError || null"
+          label="Portfolio value"
+          @range-change="loadPortfolioPerformance"
+        />
       </div>
 
       <div
@@ -109,30 +243,73 @@ onUnmounted(() => {
               <th class="px-5 py-3 font-medium">Avg cost</th>
               <th class="px-5 py-3 font-medium">Price</th>
               <th class="px-5 py-3 font-medium">Market value</th>
+              <th class="px-5 py-3 font-medium">Unrealized P&amp;L</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-border">
-            <tr
-              v-for="holding in portfolioStore.currentHoldings"
-              :key="holding.id"
-              class="text-ink"
-            >
-              <td class="px-5 py-3.5 font-semibold">{{ holding.ticker }}</td>
-              <td class="px-5 py-3.5 tabular-nums">{{ holding.shares }}</td>
-              <td class="px-5 py-3.5 tabular-nums">
-                {{ formatCents(holding.avg_cost_basis_cents) }}
-              </td>
-              <td class="px-5 py-3.5 tabular-nums">
-                {{ formatCents(holding.current_price_cents) }}
-              </td>
-              <td class="px-5 py-3.5 tabular-nums font-medium">
-                {{
-                  formatCents(
-                    holdingMarketValueCents(holding.shares, holding.current_price_cents),
-                  )
-                }}
-              </td>
-            </tr>
+            <template v-for="holding in portfolioStore.currentHoldings" :key="holding.id">
+              <tr class="text-ink">
+                <td class="px-5 py-3.5 font-semibold">
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-1.5 hover:text-accent"
+                    :aria-expanded="expandedHoldingIds.has(holding.id)"
+                    :aria-controls="`holding-performance-${holding.id}`"
+                    @click="toggleHoldingExpanded(holding.id)"
+                  >
+                    <svg
+                      class="size-3.5 shrink-0 text-ink-muted transition-transform"
+                      :class="{ 'rotate-90': expandedHoldingIds.has(holding.id) }"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      aria-hidden="true"
+                    >
+                      <path
+                        fill-rule="evenodd"
+                        d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z"
+                        clip-rule="evenodd"
+                      />
+                    </svg>
+                    {{ holding.ticker }}
+                  </button>
+                </td>
+                <td class="px-5 py-3.5 tabular-nums">{{ holding.shares }}</td>
+                <td class="px-5 py-3.5 tabular-nums">
+                  {{ formatCents(holding.avg_cost_basis_cents) }}
+                </td>
+                <td class="px-5 py-3.5 tabular-nums">
+                  {{ formatCents(holding.current_price_cents) }}
+                </td>
+                <td class="px-5 py-3.5 tabular-nums font-medium">
+                  {{
+                    formatCents(
+                      holdingMarketValueCents(holding.shares, holding.current_price_cents),
+                    )
+                  }}
+                </td>
+                <td
+                  class="px-5 py-3.5 tabular-nums font-medium"
+                  :class="holdingGainCents(holding) >= 0 ? 'text-accent' : 'text-danger'"
+                >
+                  {{ formatSignedCents(holdingGainCents(holding)) }}
+                  <span class="text-xs font-normal opacity-80">
+                    ({{ formatPercent(holdingGainPercent(holding)) }})
+                  </span>
+                </td>
+              </tr>
+              <tr v-if="expandedHoldingIds.has(holding.id)" :id="`holding-performance-${holding.id}`">
+                <td colspan="6" class="bg-canvas/40 px-5 py-4">
+                  <PerformanceChart
+                    :ref="(el) => setHoldingChartRef(holding.id, el)"
+                    :points="holdingChartPoints(holding.id)"
+                    :loading="!!portfolioStore.holdingPerformanceLoading[holding.id]"
+                    :error="holdingPerformanceErrors[holding.id] || null"
+                    :label="`${holding.ticker} price`"
+                    @range-change="(range) => loadHoldingPerformance(holding.id, range)"
+                  />
+                </td>
+              </tr>
+            </template>
           </tbody>
         </table>
       </div>
@@ -141,6 +318,7 @@ onUnmounted(() => {
         :open="tradeOpen"
         :portfolio-id="portfolioId"
         @close="tradeOpen = false"
+        @saved="onTradeRecorded"
       />
     </template>
   </div>

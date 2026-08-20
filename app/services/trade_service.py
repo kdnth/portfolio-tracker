@@ -4,6 +4,7 @@ from app.core.exceptions import NoSuchElementException
 from app.models import Trade, Holding
 from app.models.trade import TradeOptions
 from app.schemas.trade import TradeCreate
+from app.services.price_service import backfill_ticker_history_if_new
 
 
 def create_trade(db: Session, portfolio_id: int, payload: TradeCreate) -> Trade:
@@ -24,6 +25,11 @@ def create_trade(db: Session, portfolio_id: int, payload: TradeCreate) -> Trade:
         db.add(holding)
         db.flush()
 
+    # Not just for brand-new holdings: if an earlier attempt failed (e.g. rate limited),
+    # the ticker still has no history, and this call is a cheap no-op once it succeeds
+    # (backfill_ticker_history_if_new checks for existing history before doing anything).
+    backfill_ticker_history_if_new(db, payload.ticker)
+
     if payload.trade_type == TradeOptions.BUY:
         total_existing_cost = holding.shares * holding.avg_cost_basis_cents
         total_new_cost = payload.shares * payload.price_per_share_cents
@@ -36,6 +42,7 @@ def create_trade(db: Session, portfolio_id: int, payload: TradeCreate) -> Trade:
     else: # sell
         if payload.shares > holding.shares:
             raise NoSuchElementException()
+
         holding.shares -= payload.shares
 
     holding.current_price_cents = payload.price_per_share_cents
