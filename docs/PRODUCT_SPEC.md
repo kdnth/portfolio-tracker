@@ -182,6 +182,47 @@ The agent gets a small, fixed toolset, each implemented as a plain Python functi
 
 ---
 
+## Feature 3: Analysis quota, RBAC, and public landing page
+
+### Goal
+
+Two additions once the agent was live: (1) a daily cap on analyses so a portfolio-piece demo doesn't run up real Anthropic spend if someone hammers the button, with a way for the owner to exempt themselves for testing; (2) a public landing page — a rundown of what the app does, links to login/register, and a live analysis demo against a fixed example portfolio so a visitor can see the actual agent output without creating an account.
+
+### Authenticated analysis quota
+
+- **3 analyses per user per day.** Counted from a new append-only `AnalysisRequestLog` table (`user_id`, `portfolio_id`, `created_at`) — one row per analysis actually run (not per attempt that got rejected by the quota).
+- **Resets at a fixed calendar boundary: UTC midnight.** Not a rolling 24h window. Simple to reason about and to query (`count(*) where user_id = ? and created_at >= start_of_today_utc`); the "burn 3 right before midnight, get 3 more a minute later" edge case is accepted as a non-issue at this app's scale.
+- **Enforced in `analyze_portfolio_route`**, before calling `analyze_portfolio`: count today's rows for this user, reject with `429` if `>= 3` (unless admin — see below). The rejection response states the limit and that it resets at UTC midnight.
+- **Scope: per user, across all of that user's portfolios** — not per-portfolio. Three analyses total per day, on whichever portfolios they ask about.
+
+### RBAC: `is_admin` flag (not a full role system)
+
+- A single `is_admin: bool = False` column on `User`. No roles table, no permissions framework — the only thing it currently does is bypass the analysis quota. Deliberately minimal: the actual need is "let the owner test past 3/day," not a general permissions system nothing else currently asks for.
+- **No self-serve admin UI.** Toggled via a one-off script (same shape as `scripts/rebackfill_stale_tickers.py`) run directly against the DB — this is a single-operator app, a UI for granting yourself admin would be pure overhead.
+
+### Public landing page
+
+- **New public route at `/`.** Currently `/` is the authenticated app shell's mount path (gated, redirects anonymous visitors to `/login`); that gets restructured so the authenticated app moves to `/portfolios` as its own top-level route (all existing URLs — `/portfolios`, `/portfolios/:id` — are unchanged, only the parent route's own path changes), freeing `/` for the new public `LandingView`. An authenticated visitor landing on `/` is redirected straight to `/portfolios` (same `guestOnly` pattern already used for `/login`/`/register`), since the landing page is for prospective/anonymous visitors.
+- **Content:** a short rundown of what the app does (performance tracking + the analysis agent), and links to `/login` and `/register`.
+- **Live demo, not a static screenshot.** The landing page renders one fixed, seeded demo portfolio (holdings + performance chart, via new public read endpoints reusing the existing schemas/components) and a real "Analyze" button that calls the real agent against that same demo portfolio — this is a portfolio piece demonstrating a real tool-using agent, so the demo should actually be one, not a captured transcript.
+- **Demo portfolio is real data, not a mocked code path.** A dedicated seed script (`scripts/seed_demo_portfolio.py`) creates one fixed demo user/portfolio/holdings/trades. The demo analyze endpoint calls the exact same `analyze_portfolio()` function real users hit, just bound to this fixed `portfolio_id` (from config) instead of an authenticated user's own portfolio — no separate code path to keep in sync.
+
+### Demo endpoint rate limiting (unauthenticated — no accounts to key off)
+
+- **2 analyses per day, per visitor, keyed by IP address.** Tracked in a new `DemoAnalysisRequestLog` table (`ip_address`, `created_at`), same UTC-midnight reset as the authenticated quota.
+- **Accepted limitation: IP is a leaky identity.** Shared/NAT'd networks (offices, some mobile carriers) can collide with each other under one IP, and it's trivially bypassed by switching networks or using a VPN. This is a known, accepted trade-off for a portfolio-piece demo, not a security boundary — chosen over per-visitor tracking without accounts being possible any more robustly than this.
+- **Must read the real client IP through Railway's proxy**, not the proxy's own address — use the first hop of `X-Forwarded-For` when present, falling back to the raw connection address otherwise. (This app has hit proxy-related surprises in prod before — Neon's pooling behavior, `preDeployCommand` — so this gets called out explicitly rather than assumed to just work.)
+- Each demo analysis call still runs the same bounded tool-loop (max 6 rounds, 1,500 max tokens) as any authenticated analysis, so the worst-case cost of a single call is already capped regardless of this endpoint's exposure.
+
+### Explicitly out of scope (v1)
+
+- No self-serve admin UI or general role/permission system — just the one `is_admin` bypass.
+- No CAPTCHA or bot-detection on the demo endpoint beyond IP-based counting.
+- No per-portfolio analysis quota — the 3/day limit is per user, total.
+- No email/notification when a user hits their quota — just the `429` response, surfaced in the UI.
+
+---
+
 ## Decisions log
 
 Kept here for traceability — if you're wondering "why did we do it this way," it's probably answered below.
@@ -206,6 +247,10 @@ Kept here for traceability — if you're wondering "why did we do it this way," 
 | Agent backend | Real Anthropic API, Claude Haiku 4.5, no extended thinking | Existing prepaid Anthropic credits available; use those before pivoting to DeepSeek for ongoing cost savings once they're spent. `ANTHROPIC_BASE_URL` stays configurable so that pivot is a one-line env var change |
 | Agent knowledge scope | Portfolio data + general knowledge | More insightful output; mitigated with a "no prescriptive advice" system prompt constraint and disclaimer |
 | Agent temperature | Low (~0.2) | Grounded, consistent analysis over creative variation |
+| Analysis quota scope/reset | 3/user/day, fixed UTC calendar day | Simple to reason about and query; per-user (not per-portfolio) matches how the limit was actually asked for |
+| Admin exemption | Single `is_admin` boolean, no role system | Only need is bypassing this one quota for testing; a full RBAC system would be unused complexity |
+| Demo endpoint quota | 2/IP/day, not a global site-wide cap | Chosen over a global cap despite IP being a leaky identity without real accounts — accepted trade-off for a demo, not a security boundary |
+| Demo portfolio | Real seeded DB row, same `analyze_portfolio()` code path as authenticated users | Avoids a second, divergent "fake" code path just for the demo |
 
 ---
 
