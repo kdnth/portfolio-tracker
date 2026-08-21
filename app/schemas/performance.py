@@ -15,12 +15,16 @@ class PricePoint(BaseModel):
 class HoldingDailyOHLC(BaseModel):
     """One day's derived open/close/high/low for a holding's 1W/1M chart -- aggregated from
     whatever PriceSnapshot rows exist that day, not exact intraday records. See the product
-    spec's "Chart range behavior" section."""
+    spec's "Chart range behavior" section.
+
+    close_cents is null specifically for the current day while the market is still open --
+    there is no real close yet, and showing the latest live price as if it were one would
+    misrepresent an in-progress session as a settled value."""
 
     model_config = ConfigDict(from_attributes=True)
     date: date
     open_cents: int
-    close_cents: int
+    close_cents: int | None
     high_cents: int
     low_cents: int
 

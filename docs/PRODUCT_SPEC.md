@@ -62,6 +62,16 @@ A day covered only by hourly backfill has ~7 samples to derive top/bottom from; 
 
 **The 1W/1M four-line view carries a visible disclaimer**, not just a tooltip aside: open/close/top/bottom are *derived from available samples*, not exact intraday records — a brief spike or dip that occurred and reversed within one backfilled hour, or within one live-polling gap, won't show up in top/bottom.
 
+**Today's row on the 1W/1M holding chart is never treated as a complete day** — a real production incident showed the four lines were only visually distinct on the most recent day, because every other day's aggregation was over an hourly-or-denser sample set while "today" was mid-session and noisy. Handling is one of three states, decided server-side against **US Eastern time — never the viewer's local timezone**, since market hours are a property of the exchange, not the viewer:
+
+| State | Behavior |
+|---|---|
+| Before market open (or a non-trading day) | Today is **omitted entirely** from the 1W/1M series — nothing real has happened yet. |
+| Market open, not yet closed | Today is included with a real `open` (first sample) and a live-recomputed `high`/`low` (running max/min over whatever samples exist so far, recomputed fresh on every request, never cached) — but **`close_cents` is `null`**. There is no real close for a session still in progress; showing the latest live poll as if it were one would misrepresent an in-progress session as a settled value. |
+| Market closed | Today is fully complete, exactly like any historical day — real `close` = the last sample of the day. |
+
+The frontend renders a `null` `close_cents` as a genuine gap in the "Close" line (`spanGaps: false`), not a value bridged from yesterday's close.
+
 **Portfolio charts** (`PortfolioSnapshot`-backed):
 
 | Range | Shape | Source | Notes |
@@ -73,6 +83,8 @@ A day covered only by hourly backfill has ~7 samples to derive top/bottom from; 
 **Portfolio-level data has no backfill mechanism at all** — `PortfolioSnapshot` only ever accumulates forward from whenever tracking or trading began (scheduled polls, plus the trade-time snapshot added after the "graph doesn't update on a new holding" bug). A portfolio tracked for only an hour shows an hour of real data for *every* range, including 1M, until real time actually passes. **This is accepted, not a bug** — see "Explicitly out of scope" for the deferred alternative (retroactively computed history).
 
 **"Not enough data yet" state (both chart types)**: when the real data span for the selected range is too short to be meaningful, show an explicit message in place of the chart rather than silently rendering something that's technically correct but reads as broken. **Threshold: ceil(range ÷ 4) days of actual data span** — 1W requires at least **2 days**, 1M requires at least **7 days** (anchored to 28, the shortest calendar month, not our internal 30-day window: `ceil(28/4) = 7`). Below that, show the message instead of the chart. Most common case: portfolio 1W/1M on a newly-tracked portfolio; also applies to a holding chart where backfill failed and too little live history has accumulated since. 1D has no such threshold — it's already correct and not subject to this state.
+
+**1W/1M must never render an hourly-granularity axis, on either chart type, regardless of how sparse the underlying data is.** Left to auto-detect, Chart.js's time scale picks axis granularity from the actual span of whatever data came back — a chart covering only a few real hours (e.g. a portfolio tracked since this morning, or a holding whose backfill failed) would render hourly ticks and look exactly like a broken 1D chart. The x-axis unit is forced to `'day'` whenever the selected range isn't 1D. This is independent of, and in addition to, the "not enough data" threshold above: that threshold hides charts that are too sparse to be meaningful at all, but the axis itself must never fall back to hourly even for a chart that does clear the threshold.
 
 ### Data model additions
 

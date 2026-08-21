@@ -1,7 +1,10 @@
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from app.models import PortfolioSnapshot, PriceSnapshot
+from app.services import performance_service
+
+EASTERN = ZoneInfo("America/New_York")
 
 
 def _record_buy(client, headers, portfolio_id, ticker="AAPL"):
@@ -148,6 +151,96 @@ def test_holding_performance_daily_groups_by_exchange_local_date_not_utc(client,
     assert response.status_code == 200
     days = response.json()
     assert [d["date"] for d in days] == [expected_local_date.isoformat()]
+
+
+def test_holding_performance_daily_excludes_today_before_market_open(
+    client, make_user, db_session, monkeypatch
+):
+    headers = make_user(username="alice", email="alice@test.com")
+    portfolio_id = client.post("/portfolios/", json={"name": "Retirement"}, headers=headers).json()["id"]
+    _record_buy(client, headers, portfolio_id, ticker="AAPL")
+    holding_id = _get_holding_id(client, headers, portfolio_id, ticker="AAPL")
+
+    # 2026-08-20 is a Thursday. The window/cutoff is patched to this same fixed reference
+    # point so the test doesn't depend on the real wall clock or the real day of the week.
+    now_et = datetime(2026, 8, 20, 8, 0, tzinfo=EASTERN)  # before the 9:30am open
+    monkeypatch.setattr(
+        performance_service, "_range_cutoff", lambda range_: now_et.astimezone(timezone.utc) - timedelta(days=7)
+    )
+    db_session.add(PriceSnapshot(ticker="AAPL", price_cents=10000, as_of=now_et.astimezone(timezone.utc)))
+    db_session.flush()
+
+    results = performance_service.get_holding_performance_daily(
+        db_session, portfolio_id, holding_id, "1W", now=now_et
+    )
+
+    assert results == []
+
+
+def test_holding_performance_daily_has_null_close_during_market_hours(
+    client, make_user, db_session, monkeypatch
+):
+    headers = make_user(username="alice", email="alice@test.com")
+    portfolio_id = client.post("/portfolios/", json={"name": "Retirement"}, headers=headers).json()["id"]
+    _record_buy(client, headers, portfolio_id, ticker="AAPL")
+    holding_id = _get_holding_id(client, headers, portfolio_id, ticker="AAPL")
+
+    today = date(2026, 8, 20)  # Thursday
+    open_snapshot = datetime(2026, 8, 20, 9, 30, tzinfo=EASTERN)
+    mid_snapshot = datetime(2026, 8, 20, 11, 0, tzinfo=EASTERN)
+    now_et = datetime(2026, 8, 20, 12, 0, tzinfo=EASTERN)  # mid-session
+    monkeypatch.setattr(
+        performance_service, "_range_cutoff", lambda range_: now_et.astimezone(timezone.utc) - timedelta(days=7)
+    )
+    db_session.add_all([
+        PriceSnapshot(ticker="AAPL", price_cents=10000, as_of=open_snapshot.astimezone(timezone.utc)),
+        PriceSnapshot(ticker="AAPL", price_cents=10500, as_of=mid_snapshot.astimezone(timezone.utc)),
+    ])
+    db_session.flush()
+
+    results = performance_service.get_holding_performance_daily(
+        db_session, portfolio_id, holding_id, "1W", now=now_et
+    )
+
+    assert len(results) == 1
+    assert results[0].date == today
+    assert results[0].open_cents == 10000
+    assert results[0].high_cents == 10500
+    assert results[0].low_cents == 10000
+    assert results[0].close_cents is None
+
+
+def test_holding_performance_daily_has_real_close_after_market_close(
+    client, make_user, db_session, monkeypatch
+):
+    headers = make_user(username="alice", email="alice@test.com")
+    portfolio_id = client.post("/portfolios/", json={"name": "Retirement"}, headers=headers).json()["id"]
+    _record_buy(client, headers, portfolio_id, ticker="AAPL")
+    holding_id = _get_holding_id(client, headers, portfolio_id, ticker="AAPL")
+
+    today = date(2026, 8, 20)  # Thursday
+    open_snapshot = datetime(2026, 8, 20, 9, 30, tzinfo=EASTERN)
+    close_snapshot = datetime(2026, 8, 20, 15, 59, tzinfo=EASTERN)
+    now_et = datetime(2026, 8, 20, 16, 30, tzinfo=EASTERN)  # after the 4pm close
+    monkeypatch.setattr(
+        performance_service, "_range_cutoff", lambda range_: now_et.astimezone(timezone.utc) - timedelta(days=7)
+    )
+    db_session.add_all([
+        PriceSnapshot(ticker="AAPL", price_cents=10000, as_of=open_snapshot.astimezone(timezone.utc)),
+        PriceSnapshot(ticker="AAPL", price_cents=9800, as_of=close_snapshot.astimezone(timezone.utc)),
+    ])
+    db_session.flush()
+
+    results = performance_service.get_holding_performance_daily(
+        db_session, portfolio_id, holding_id, "1W", now=now_et
+    )
+
+    assert len(results) == 1
+    assert results[0].date == today
+    assert results[0].open_cents == 10000
+    assert results[0].close_cents == 9800
+    assert results[0].high_cents == 10000
+    assert results[0].low_cents == 9800
 
 
 def test_holding_performance_404_when_holding_not_in_portfolio(client, make_user):

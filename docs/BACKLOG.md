@@ -145,17 +145,20 @@ Three real bugs surfaced once this was actually running in production: the portf
   - `app/api/routes/holding.py`: `GET .../performance` keeps returning the existing flat shape for `range=1D`; returns the new daily-OHLC shape for `1W`/`1M`.
   - Tests: aggregation correctness (open = first row, close = last row, high/low = max/min, across a day mixing backfilled + live-polled rows); day-grouping uses exchange-local date, not UTC date.
   - One commit. Depends on 5.2.
+  - Follow-up: the four lines were only visually distinct on the most recent day in practice — every other day aggregated over a denser sample set than a mid-session "today." Added explicit today-handling (omit before market open; real open + live-recomputed high/low + `close_cents=null` once open but not yet closed; fully complete once closed), server-side against ET regardless of viewer timezone. `close_cents` on `HoldingDailyOHLC` is now nullable. See the spec's "Chart range behavior" section for the exact state table.
 
-- [ ] **5.4 — Frontend: four-line rendering + disclaimer for holding 1W/1M**.
+- [x] **5.4 — Frontend: four-line rendering + disclaimer for holding 1W/1M**.
   - `PerformanceChart.vue` (or a variant): render mode switches on range — single line for 1D (unchanged), four lines (open/close/top/bottom) for 1W/1M, reading the new API response shape.
   - Visible disclaimer on the four-line view: values are derived from available samples, not exact intraday records.
   - One commit. Depends on 5.3.
+  - Follow-up: `close_cents` can now be `null` for today's row (see 5.3 follow-up) — the "Close" series renders that as a genuine gap (`spanGaps: false`) instead of bridging to yesterday's close.
 
-- [ ] **5.5 — "Not enough data yet" state, both chart types**.
+- [x] **5.5 — "Not enough data yet" state, both chart types**.
   - Threshold: `ceil(range ÷ 4)` days of actual data span — **1W requires ≥2 days**, **1M requires ≥7 days** (anchored to 28, the shortest calendar month: `ceil(28/4) = 7`, not our internal 30-day window). 1D has no threshold, not subject to this state.
   - Applies to: portfolio 1W/1M on a newly-tracked portfolio (no backfill exists for portfolio history — this is the common case); a holding chart where backfill failed and too little live history has accumulated yet (the rarer case).
-  - Frontend: explicit message in place of the chart — not an empty chart, not a misleadingly narrow one.
+  - Frontend: explicit message in place of the chart — not an empty chart, not a misleadingly narrow one. `PerformanceChart.vue` computes actual data span client-side (distinct calendar days: `ohlcPoints.length` for the OHLC view, distinct `as_of` dates for flat portfolio/1D data) and shows "Not enough price history yet for this range." instead of the chart when it's below threshold.
   - One commit. Independent of 5.2–5.4 — can land in any order relative to them.
+  - Follow-up bug found alongside this: 1W/1M's x-axis had no explicit `time.unit`, so Chart.js auto-picked axis granularity from whatever span the actual data happened to cover — a holding or portfolio with only a few real hours of data for 1W/1M rendered hourly ticks (e.g. "12PM–9PM"), looking like a broken 1D chart. Fixed by forcing `unit: 'day'` whenever `selectedRange !== '1D'`, on both chart types, regardless of how sparse the data is — independent of the not-enough-data threshold above (belt-and-suspenders: the threshold hides genuinely-too-sparse charts, but the axis must never fall back to hourly even in edge cases that pass the threshold).
 
 **Sprint 5 exit criteria**: a newly-tracked ticker's 1W/1M chart shows four real, correctly-timestamped lines with a visible disclaimer; no `PriceSnapshot` anywhere carries a future timestamp; a newly-tracked portfolio's 1W/1M shows an explicit "not enough data" message instead of a confusing narrow chart identical to 1D.
 

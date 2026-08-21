@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NoSuchElementException
-from app.core.scheduler import MARKET_TIMEZONE
+from app.core.scheduler import MARKET_CLOSE, MARKET_OPEN, MARKET_TIMEZONE
 from app.models import Holding, PortfolioSnapshot, PriceSnapshot
 from app.schemas.performance import HoldingDailyOHLC, PerformanceRange
 
@@ -58,7 +58,7 @@ def get_holding_performance(
 
 
 def get_holding_performance_daily(
-    db: Session, portfolio_id: int, holding_id: int, range_: PerformanceRange
+    db: Session, portfolio_id: int, holding_id: int, range_: PerformanceRange, now: datetime | None = None
 ) -> list[HoldingDailyOHLC]:
     """Returns one open/close/high/low aggregate per calendar day (in US market local time)
     for this holding, within the requested range -- for 1W/1M, per the product spec's "Chart
@@ -66,6 +66,16 @@ def get_holding_performance_daily(
     care whether a given day's rows came from backfill or live polling -- a day with more
     samples (live-polled) just derives a more accurate high/low than a day with fewer
     (backfilled) as a natural side effect, not a special case.
+
+    The current day is never "complete" the way a past day is, so it's handled specially:
+      - Omitted entirely if the market hasn't opened yet today (nothing real happened yet).
+      - Included with a real open and a live-recomputed high/low, but close_cents=None, once
+        the market has opened but not yet closed -- there's no real close for a session still
+        in progress, and showing the latest live poll as if it were one would look like noisy
+        intraday data grafted onto an otherwise clean daily line.
+      - Fully populated, exactly like any other day, once the market has closed today.
+
+    `now` is exposed for tests; defaults to the real current time.
     Raises NoSuchElementException if the holding doesn't exist or doesn't belong to portfolio_id."""
     snapshots = _get_holding_snapshots(db, portfolio_id, holding_id, range_)
 
@@ -74,15 +84,25 @@ def get_holding_performance_daily(
         local_date = snapshot.as_of.astimezone(MARKET_TIMEZONE).date()
         daily_groups[local_date].append(snapshot)
 
+    now_et = (now or datetime.now(MARKET_TIMEZONE)).astimezone(MARKET_TIMEZONE)
+    today = now_et.date()
+    market_open_today = now_et.weekday() < 5 and now_et.time() >= MARKET_OPEN
+    market_closed_today = now_et.weekday() < 5 and now_et.time() >= MARKET_CLOSE
+
     results = []
     for day in sorted(daily_groups):
+        if day == today and not market_open_today:
+            continue  # market hasn't opened yet -- nothing real to show for today
+
         rows = daily_groups[day]  # already oldest-first within the day, from the ordered query
         prices = [row.price_cents for row in rows]
+        today_still_open = day == today and not market_closed_today
+
         results.append(
             HoldingDailyOHLC(
                 date=day,
                 open_cents=rows[0].price_cents,
-                close_cents=rows[-1].price_cents,
+                close_cents=None if today_still_open else rows[-1].price_cents,
                 high_cents=max(prices),
                 low_cents=min(prices),
             )
