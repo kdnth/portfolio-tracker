@@ -57,9 +57,9 @@ A shared Axios client attaches the Bearer token, clears the session on 401, and 
 
 Views stay thin and call Pinia stores for domain state. Shared form primitives handle labels, errors, loading, and basic accessibility (`aria-*`, modal focus/escape behavior). Tailwind `@theme` tokens keep color and typography consistent.
 
-### Schema migrations on release
+### Schema migrations on deploy
 
-Alembic migrations run as Railway's release command before the new container takes traffic. The API normalizes Neon-style `postgresql://` URLs to `postgresql+psycopg://` so deploy config stays simple.
+Alembic migrations run as Railway's pre-deploy command (`railway.toml`'s `preDeployCommand`) after the build, before the new container takes traffic. The API normalizes Neon-style `postgresql://` URLs to `postgresql+psycopg://` so deploy config stays simple.
 
 ### Tests against real Postgres with rollback
 

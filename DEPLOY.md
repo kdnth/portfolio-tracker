@@ -23,7 +23,7 @@ You can paste Neon’s `postgresql://…` URL as-is into Railway. The API normal
 | `JWT_SECRET` | Long random string (`openssl rand -hex 32`) |
 | `CORS_ORIGINS` | Your Netlify URL, e.g. `https://your-app.netlify.app` (comma-separate if you also keep localhost) |
 
-4. Deploy. `railway.toml` runs `alembic upgrade head` on release, then starts uvicorn.
+4. Deploy. `railway.toml` runs `alembic upgrade head` as a pre-deploy command (runs after build, before the new container takes traffic), then starts uvicorn.
 5. Confirm `https://<your-railway-domain>/health` returns `{"status":"ok"}`.
 6. Copy the public Railway HTTPS URL (no trailing slash).
 
@@ -56,7 +56,7 @@ CORS_ORIGINS=http://localhost:5173,https://your-app.netlify.app
 
 - [ ] Neon project created; URL has `sslmode=require`
 - [ ] Railway health check passes
-- [ ] Migrations ran (release command / check tables in Neon)
+- [ ] Migrations ran (check the deploy's pre-deploy-command logs in Railway, and/or check tables directly in Neon)
 - [ ] Netlify `VITE_API_BASE_URL` points at Railway
 - [ ] Railway `CORS_ORIGINS` includes the Netlify origin
 - [ ] Register → create portfolio → record trade works in production
