@@ -134,7 +134,7 @@ Three real bugs surfaced once this was actually running in production: the portf
   - Explicit `BackgroundScheduler(timezone=timezone.utc)` and aware `next_run_time` — not confirmed to be the cause of anything observed, but was relying on a coincidental match between `tzlocal`'s system-dependent default and naive `datetime.now()`; made explicit since that's fragile regardless.
   - Chart styling: axis tick marks restored (`grid: { drawOnChartArea: false, drawTicks: true }` — they'd been fully disabled, not just the gridlines), fill color changed to a translucent tint of the line color instead of an opaque swatch.
 
-- [ ] **5.2 — Backfill rework: hourly interval, exclude today, real per-bar timestamps**.
+- [x] **5.2 — Backfill rework: hourly interval, exclude today, real per-bar timestamps**.
   - `app/services/twelvedata_service.py`: fetch `interval=1h` instead of `1day` (`outputsize` sized for the 30-day window, ~250 to be safe). Parse each bar's own `datetime` (combined with the response's `meta.exchange_timezone`) as `as_of` — stop synthesizing a fixed 4pm-ET marker. Drop any bar whose date is today's date (exchange-local) before returning.
   - Tests: hourly bars produce distinct real timestamps (not a fixed time); today's date is excluded even when Twelve Data returns a provisional entry for it; existing tests updated for the new fixture shape (mocked HTTP responses need an hourly-shaped body now).
   - One commit. This unblocks 5.3 — the per-day aggregation needs real, correctly-dated hourly rows to aggregate, not daily rows with synthesized future timestamps.
