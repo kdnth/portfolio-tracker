@@ -1,6 +1,7 @@
 import json
 from datetime import datetime, timezone
 
+from app.core.config import settings
 from app.models import Holding, Portfolio, User
 from app.services import agent_service, agent_tools
 
@@ -87,6 +88,22 @@ def test_analyze_portfolio_dispatches_tool_call_and_returns_final_text(db_sessio
     assert tool_result_block["tool_use_id"] == "t1"
     payload = json.loads(tool_result_block["content"])
     assert payload[0]["ticker"] == "AAPL"
+
+
+def test_analyze_portfolio_adds_demo_addendum_only_for_the_demo_portfolio(db_session, monkeypatch):
+    _, real_portfolio = _make_user_and_portfolio(db_session, username="alice")
+    _, demo_portfolio = _make_user_and_portfolio(db_session, username="demo_portfolio_owner")
+    monkeypatch.setattr(settings, "demo_portfolio_id", demo_portfolio.id)
+
+    responses = [FakeResponse("end_turn", [FakeBlock("text", text="Analysis.")])]
+    fake_client = _install_fake_anthropic(monkeypatch, responses)
+    agent_service.analyze_portfolio(db_session, real_portfolio.id)
+    assert "fictional" not in fake_client.messages.calls[0]["system"]
+
+    responses = [FakeResponse("end_turn", [FakeBlock("text", text="Analysis.")])]
+    fake_client = _install_fake_anthropic(monkeypatch, responses)
+    agent_service.analyze_portfolio(db_session, demo_portfolio.id)
+    assert "fictional" in fake_client.messages.calls[0]["system"]
 
 
 def test_analyze_portfolio_handles_unknown_tool_gracefully(db_session, monkeypatch):

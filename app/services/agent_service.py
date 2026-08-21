@@ -25,6 +25,23 @@ buy/sell X" or tell the user what to do with their money. You are not a financia
 
 Always end your analysis with a brief disclaimer that this is not financial advice."""
 
+# Appended to the system prompt only for the public demo portfolio (see
+# analyze_portfolio() below). Its holdings use fictional placeholder-company tickers
+# (Contoso, Fabrikam, Northwind, AdventureWorks) with synthetic price history, since real
+# tickers' price history is shared across every user and can't be fabricated without
+# corrupting real charts. Without this, the model might recognize these as well-known
+# placeholder names and comment on that instead of analyzing the data, or worse, invent
+# real-sounding "facts" about a company that doesn't exist.
+DEMO_SYSTEM_PROMPT_ADDENDUM = """
+
+Note: this specific portfolio is a demonstration example. Its holdings (Contoso, \
+Fabrikam, Northwind, AdventureWorks) are fictional placeholder company names, not real, \
+tradeable companies -- do not describe real-world business operations, sector news, or \
+"facts" about them, and do not claim they are real. Instead, base your analysis entirely \
+on the concrete patterns in the data your tools return: price trends, volatility, cost \
+basis performance, and trade timing, exactly as you would for a real portfolio -- just \
+without the general-knowledge company color you'd normally add."""
+
 FORCE_FINAL_ANSWER_MESSAGE = (
     "You've reached the tool-call limit for this analysis. Based on what you've already "
     "learned, give your final analysis now -- no more tool calls."
@@ -36,6 +53,9 @@ def analyze_portfolio(db: Session, portfolio_id: int, question: str | None = Non
     portfolio_id is bound here, server-side -- it is never exposed to the model as a tool
     parameter, so the model can only ever see data for the portfolio this call was made for."""
     client = Anthropic(api_key=settings.anthropic_api_key, base_url=settings.anthropic_base_url)
+    system_prompt = SYSTEM_PROMPT
+    if portfolio_id == settings.demo_portfolio_id:
+        system_prompt += DEMO_SYSTEM_PROMPT_ADDENDUM
 
     messages: list[dict] = [
         {"role": "user", "content": question or "Analyze this portfolio's performance and notable patterns."}
@@ -45,7 +65,7 @@ def analyze_portfolio(db: Session, portfolio_id: int, question: str | None = Non
         response = client.messages.create(
             model=MODEL,
             max_tokens=MAX_TOKENS,
-            system=SYSTEM_PROMPT,
+            system=system_prompt,
             tools=AGENT_TOOLS,
             messages=messages,
             extra_body={"temperature": TEMPERATURE},
@@ -66,7 +86,7 @@ def analyze_portfolio(db: Session, portfolio_id: int, question: str | None = Non
     response = client.messages.create(
         model=MODEL,
         max_tokens=MAX_TOKENS,
-        system=SYSTEM_PROMPT,
+        system=system_prompt,
         messages=messages,
         extra_body={"temperature": TEMPERATURE},
     )
