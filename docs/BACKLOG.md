@@ -139,7 +139,7 @@ Three real bugs surfaced once this was actually running in production: the portf
   - Tests: hourly bars produce distinct real timestamps (not a fixed time); today's date is excluded even when Twelve Data returns a provisional entry for it; existing tests updated for the new fixture shape (mocked HTTP responses need an hourly-shaped body now).
   - One commit. This unblocks 5.3 — the per-day aggregation needs real, correctly-dated hourly rows to aggregate, not daily rows with synthesized future timestamps.
 
-- [ ] **5.3 — Per-day OHLC aggregation for holding 1W/1M**: new backend logic + range-dependent response shape.
+- [x] **5.3 — Per-day OHLC aggregation for holding 1W/1M**: new backend logic + range-dependent response shape.
   - `app/services/performance_service.py`: new function grouping a ticker's `PriceSnapshot` rows by calendar day **in the exchange's timezone** (not UTC — a bar at 11pm UTC during EDT is still "today" in ET) and returning one `{date, open_cents, close_cents, high_cents, low_cents}` per day. Source-agnostic: doesn't care whether a given day's rows came from backfill or live polling, just aggregates whatever exists.
   - `app/schemas/performance.py`: new schema for the daily-OHLC shape.
   - `app/api/routes/holding.py`: `GET .../performance` keeps returning the existing flat shape for `range=1D`; returns the new daily-OHLC shape for `1W`/`1M`.
