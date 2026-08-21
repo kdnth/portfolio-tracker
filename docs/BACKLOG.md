@@ -195,13 +195,13 @@ Requires reading the spec's new "Analysis quota, RBAC, and public landing page" 
   - One commit. Pure routing change, no new UI yet — unblocks 6.6.
   - Not visually verified in-browser this pass (Chrome extension wasn't connected) -- type-check, lint, and build all pass. Worth a manual click-through alongside 6.3's before considering both fully done.
 
-- [ ] **6.5 — Backend: demo portfolio + public demo endpoints, IP-throttled**.
-  - `scripts/seed_demo_portfolio.py`: creates one fixed demo user/portfolio/holdings/trades (real DB rows, not mocked). `DEMO_PORTFOLIO_ID` added to config once seeded.
-  - New public (no `get_current_user`) routes: `GET /demo/portfolio` (holdings + performance, reusing existing schemas) and `POST /demo/analyze` — the latter calls the exact same `analyze_portfolio()` real users hit, bound to `DEMO_PORTFOLIO_ID`.
-  - New `DemoAnalysisRequestLog` table (`ip_address`, `created_at`); `POST /demo/analyze` returns `429` past 2/day for that IP, UTC-midnight reset, same shape as 6.2's quota response.
-  - IP extraction: first hop of `X-Forwarded-For` when present (Railway sits behind a proxy), falling back to the raw connection address — verify against real prod traffic, not just locally, given this app's history of proxy-related prod surprises.
-  - Tests: demo endpoints return real seeded data; per-IP quota blocks the 3rd same-day call from one IP; a different IP is unaffected.
-  - One commit. Depends on 6.1 (shares the `is_admin`/quota patterns from 6.2, but is otherwise independent of 6.2/6.3).
+- [x] **6.5 — Backend: demo portfolio + public demo endpoints, IP-throttled**.
+  - `scripts/seed_demo_portfolio.py`: creates one fixed demo user/portfolio/holdings/trades (real DB rows, not mocked; idempotent -- reruns just report the existing id). Uses common tickers (AAPL/MSFT/GOOGL/WMT) likely already tracked by real users, so the demo gets real historical chart data immediately rather than waiting on its own fresh backfill. `DEMO_PORTFOLIO_ID` added to config (`app/core/config.py`, optional, defaults `None`) once seeded -- confirmed live locally (seeded portfolio id 8, all endpoints hit and returning real data, including real `PriceSnapshot` history on the holding-performance endpoint).
+  - New public (no `get_current_user`) router `app/api/routes/demo.py`, mirroring the authenticated surface 1:1 rather than one flattened endpoint (so 6.6 can reuse the real interactive frontend components): `GET /demo/portfolio`, `GET /demo/holdings`, `GET /demo/performance?range=`, `GET /demo/holdings/{holding_id}/performance?range=`, `POST /demo/analyze` (calls the exact same `analyze_portfolio()` real users hit, bound to `DEMO_PORTFOLIO_ID`). All return `503` with a clear message if `DEMO_PORTFOLIO_ID` isn't configured, rather than a confusing `404`.
+  - New `DemoAnalysisRequestLog` table (`ip_address`, `created_at`); `POST /demo/analyze` returns `429` past 2/day for that IP, UTC-midnight reset. The UTC-midnight boundary logic is shared with 6.2's `analysis_quota_service` via a small new `app/core/time_utils.start_of_today_utc()` helper (both services were computing the identical thing).
+  - IP extraction (`app/core/deps.get_client_ip`): first hop of `X-Forwarded-For` when present (Railway sits behind a proxy), falling back to the raw connection address. Not yet verified against real prod traffic -- only locally, where there's no proxy in front to test against. Worth double-checking once this is deployed.
+  - Tests (`tests/test_demo.py`): 503 when unconfigured; endpoints return real seeded data; unknown holding 404s; per-IP quota blocks the 3rd same-day call; a different IP (via a different `X-Forwarded-For`) is unaffected.
+  - One commit. Depends on 6.1.
 
 - [ ] **6.6 — Frontend: `LandingView` (marketing copy + live demo)**.
   - Rundown of what the app does, links to `/login` and `/register`.

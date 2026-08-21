@@ -12,3 +12,8 @@ class AnalysisQuotaResponse(BaseModel):
     used_today: int
     # None means unlimited -- the requesting user is an admin, exempt from the daily quota.
     remaining: int | None
+
+
+class DemoAnalysisResponse(BaseModel):
+    report: str
+    demo_analyses_remaining_today: int

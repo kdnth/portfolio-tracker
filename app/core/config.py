@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     twelve_data_api_key: str
     anthropic_api_key: str
     anthropic_base_url: str = "https://api.anthropic.com"
+    # Set after running scripts/seed_demo_portfolio.py --execute. Demo endpoints return 503
+    # until this is configured.
+    demo_portfolio_id: int | None = None
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

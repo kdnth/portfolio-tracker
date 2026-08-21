@@ -5,3 +5,4 @@ from app.models.trade import Trade
 from app.models.price_snapshot import PriceSnapshot
 from app.models.portfolio_snapshot import PortfolioSnapshot
 from app.models.analysis_request_log import AnalysisRequestLog
+from app.models.demo_analysis_request_log import DemoAnalysisRequestLog
