@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import PriceUnavailableException, RateLimitExceededException
 from app.models import Holding, PortfolioSnapshot, PriceSnapshot
 from app.services.finnhub_service import QuoteResult, get_quote
-from app.services.twelvedata_service import DailyClose, get_daily_history
+from app.services.twelvedata_service import HistoricalBar, get_historical_bars
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ def list_actively_held_tickers(db: Session) -> list[str]:
     return [row[0] for row in rows]
 
 
-def _record_price_snapshot(db: Session, quote: QuoteResult | DailyClose) -> None:
+def _record_price_snapshot(db: Session, quote: QuoteResult | HistoricalBar) -> None:
     """Writes a PriceSnapshot row for the quote, silently skipping if one already exists
     for this (ticker, as_of) pair -- Finnhub returns the last trade's timestamp, which can
     repeat across polls when a ticker hasn't traded since the previous cycle."""
@@ -83,17 +83,18 @@ def record_portfolio_snapshot_now(db: Session, portfolio_id: int) -> None:
 
 
 def backfill_ticker_history_if_new(db: Session, ticker: str) -> None:
-    """If no PriceSnapshot exists yet for this ticker anywhere in the app, backfills the
-    most recent 30 daily closes from Twelve Data. A failure here (bad symbol, rate limit,
-    network error) is logged and swallowed, never raised -- this is an enrichment step, not
-    part of the core trade-recording operation it's called from. Doesn't commit; the caller's
-    own transaction covers any rows staged here."""
+    """If no PriceSnapshot exists yet for this ticker anywhere in the app, backfills its
+    recent hourly bars from Twelve Data (roughly the last 30 calendar days, excluding the
+    current not-yet-closed trading day -- see get_historical_bars). A failure here (bad
+    symbol, rate limit, network error) is logged and swallowed, never raised -- this is an
+    enrichment step, not part of the core trade-recording operation it's called from.
+    Doesn't commit; the caller's own transaction covers any rows staged here."""
     already_tracked = db.query(PriceSnapshot).filter(PriceSnapshot.ticker == ticker).first() is not None
     if already_tracked:
         return
 
     try:
-        daily_closes = get_daily_history(ticker)
+        bars = get_historical_bars(ticker)
     except RateLimitExceededException:
         logger.warning(
             "Historical backfill skipped for ticker '%s': Twelve Data rate limit reached "
@@ -105,10 +106,10 @@ def backfill_ticker_history_if_new(db: Session, ticker: str) -> None:
         logger.warning("Historical backfill unavailable for new ticker '%s'", ticker)
         return
 
-    for daily_close in daily_closes:
-        _record_price_snapshot(db, daily_close)
+    for bar in bars:
+        _record_price_snapshot(db, bar)
 
-    logger.info("Backfilled %d day(s) of history for new ticker '%s'", len(daily_closes), ticker)
+    logger.info("Backfilled %d bar(s) of history for new ticker '%s'", len(bars), ticker)
 
 
 def poll_and_record_prices(db: Session) -> list[str]:

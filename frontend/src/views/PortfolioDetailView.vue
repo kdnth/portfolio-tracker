@@ -7,7 +7,13 @@ import PerformanceChart from '@/components/portfolio/PerformanceChart.vue'
 import RecordTradeModal from '@/components/portfolio/RecordTradeModal.vue'
 import AppAlert from '@/components/ui/AppAlert.vue'
 import AppButton from '@/components/ui/AppButton.vue'
-import { usePortfolioStore, type Holding, type PerformanceRange } from '@/stores/portfolio'
+import {
+  usePortfolioStore,
+  isFlatPricePoint,
+  isHoldingDailyOHLC,
+  type Holding,
+  type PerformanceRange,
+} from '@/stores/portfolio'
 import { getApiErrorMessage } from '@/utils/apiError'
 import {
   formatCents,
@@ -106,11 +112,14 @@ async function loadHoldingPerformance(holdingId: number, range: PerformanceRange
   }
 }
 
-function holdingChartPoints(holdingId: number) {
-  return (portfolioStore.holdingPerformance[holdingId] ?? []).map((point) => ({
-    as_of: point.as_of,
-    value_cents: point.price_cents,
-  }))
+function holdingFlatPoints(holdingId: number) {
+  return (portfolioStore.holdingPerformance[holdingId] ?? [])
+    .filter(isFlatPricePoint)
+    .map((point) => ({ as_of: point.as_of, value_cents: point.price_cents }))
+}
+
+function holdingOhlcPoints(holdingId: number) {
+  return (portfolioStore.holdingPerformance[holdingId] ?? []).filter(isHoldingDailyOHLC)
 }
 
 function onTradeRecorded() {
@@ -306,7 +315,9 @@ onUnmounted(() => {
                 <td colspan="6" class="bg-canvas/40 px-5 py-4">
                   <PerformanceChart
                     :ref="(el) => setHoldingChartRef(holding.id, el)"
-                    :points="holdingChartPoints(holding.id)"
+                    :points="holdingFlatPoints(holding.id)"
+                    :ohlc-points="holdingOhlcPoints(holding.id)"
+                    :supports-ohlc="true"
                     :loading="!!portfolioStore.holdingPerformanceLoading[holding.id]"
                     :error="holdingPerformanceErrors[holding.id] || null"
                     :label="`${holding.ticker} price`"

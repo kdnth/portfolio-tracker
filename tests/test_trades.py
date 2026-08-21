@@ -4,7 +4,7 @@ import httpx
 
 from app.models import PortfolioSnapshot, PriceSnapshot
 from app.services import price_service
-from app.services.twelvedata_service import DailyClose
+from app.services.twelvedata_service import HistoricalBar
 
 
 def _record_buy(client, headers, portfolio_id, ticker="AAPL"):
@@ -98,9 +98,9 @@ def test_first_trade_on_a_new_ticker_backfills_history(client, make_user, monkey
     calls = []
     monkeypatch.setattr(
         price_service,
-        "get_daily_history",
+        "get_historical_bars",
         lambda ticker: calls.append(ticker)
-        or [DailyClose(ticker, 14000, datetime(2026, 6, 30, 20, 0, tzinfo=timezone.utc))],
+        or [HistoricalBar(ticker, 14000, datetime(2026, 6, 30, 20, 0, tzinfo=timezone.utc))],
     )
 
     response = _record_buy(client, headers, portfolio_id, ticker="AAPL")
@@ -122,7 +122,7 @@ def test_second_holding_of_an_already_tracked_ticker_does_not_backfill_again(
 
     calls = []
     monkeypatch.setattr(
-        price_service, "get_daily_history", lambda ticker: calls.append(ticker) or []
+        price_service, "get_historical_bars", lambda ticker: calls.append(ticker) or []
     )
 
     response = _record_buy(client, headers, portfolio_id, ticker="AAPL")
@@ -138,7 +138,7 @@ def test_backfill_failure_does_not_fail_the_trade(client, make_user, monkeypatch
     def raise_error(ticker):
         raise httpx.ConnectError("network unreachable")
 
-    monkeypatch.setattr(price_service, "get_daily_history", raise_error)
+    monkeypatch.setattr(price_service, "get_historical_bars", raise_error)
 
     response = _record_buy(client, headers, portfolio_id, ticker="AAPL")
 

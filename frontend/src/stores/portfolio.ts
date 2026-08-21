@@ -32,13 +32,36 @@ export interface PricePoint {
   price_cents: number
 }
 
+export interface HoldingDailyOHLC {
+  date: string
+  open_cents: number
+  /** Null specifically for the current day while the market is still open -- there is no
+   * real close yet. See the product spec's "Chart range behavior" section. */
+  close_cents: number | null
+  high_cents: number
+  low_cents: number
+}
+
+/** The holding performance endpoint's response shape depends on range: flat PricePoints
+ * for 1D, one HoldingDailyOHLC per day for 1W/1M. See the product spec's "Chart range
+ * behavior" section. */
+export type HoldingPerformancePoint = PricePoint | HoldingDailyOHLC
+
+export function isHoldingDailyOHLC(point: HoldingPerformancePoint): point is HoldingDailyOHLC {
+  return 'open_cents' in point
+}
+
+export function isFlatPricePoint(point: HoldingPerformancePoint): point is PricePoint {
+  return 'price_cents' in point
+}
+
 export const usePortfolioStore = defineStore('portfolio', () => {
   const portfolios = ref<Portfolio[]>([])
   const currentPortfolio = ref<Portfolio | null>(null)
   const currentHoldings = ref<Holding[]>([])
   const portfolioPerformance = ref<PortfolioValuePoint[]>([])
   const portfolioPerformanceLoading = ref(false)
-  const holdingPerformance = ref<Record<number, PricePoint[]>>({})
+  const holdingPerformance = ref<Record<number, HoldingPerformancePoint[]>>({})
   const holdingPerformanceLoading = ref<Record<number, boolean>>({})
 
   async function fetchPortfolios() {
@@ -96,7 +119,7 @@ export const usePortfolioStore = defineStore('portfolio', () => {
   ) {
     holdingPerformanceLoading.value = { ...holdingPerformanceLoading.value, [holdingId]: true }
     try {
-      const response = await apiClient.get<PricePoint[]>(
+      const response = await apiClient.get<HoldingPerformancePoint[]>(
         `/portfolios/${portfolioId}/holdings/${holdingId}/performance`,
         { params: { range } },
       )

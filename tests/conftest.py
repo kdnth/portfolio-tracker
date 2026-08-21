@@ -25,8 +25,8 @@ def _no_live_backfill(monkeypatch):
     """Recording a trade for a not-yet-tracked ticker triggers a Twelve Data historical
     backfill. Without this, any test that records such a trade would silently make a real
     network call. Tests that specifically exercise backfill behavior re-patch
-    get_daily_history themselves, which overrides this default."""
-    monkeypatch.setattr(price_service, "get_daily_history", lambda ticker: [])
+    get_historical_bars themselves, which overrides this default."""
+    monkeypatch.setattr(price_service, "get_historical_bars", lambda ticker: [])
 
 
 @pytest.fixture(autouse=True)
