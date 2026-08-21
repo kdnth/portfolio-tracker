@@ -194,6 +194,7 @@ Two additions once the agent was live: (1) a daily cap on analyses so a portfoli
 - **Resets at a fixed calendar boundary: UTC midnight.** Not a rolling 24h window. Simple to reason about and to query (`count(*) where user_id = ? and created_at >= start_of_today_utc`); the "burn 3 right before midnight, get 3 more a minute later" edge case is accepted as a non-issue at this app's scale.
 - **Enforced in `analyze_portfolio_route`**, before calling `analyze_portfolio`: count today's rows for this user, reject with `429` if `>= 3` (unless admin — see below). The rejection response states the limit and that it resets at UTC midnight.
 - **Scope: per user, across all of that user's portfolios** — not per-portfolio. Three analyses total per day, on whichever portfolios they ask about.
+- **`GET /users/me/analysis-quota`** returns `{limit, used_today, remaining}` (`remaining: null` for admins) — lets the frontend show the remaining count on page load, not just after the user has already clicked Analyze once.
 
 ### RBAC: `is_admin` flag (not a full role system)
 

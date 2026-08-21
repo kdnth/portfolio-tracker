@@ -173,11 +173,12 @@ Requires reading the spec's new "Analysis quota, RBAC, and public landing page" 
   - `scripts/grant_admin.py --username <username>`: sets `is_admin=True` for one user, by username. Same style as `scripts/rebackfill_stale_tickers.py` (dry-run-safe reporting, explicit confirmation before mutating). No admin UI.
   - One commit.
 
-- [ ] **6.2 — Backend: per-user analysis quota (3/day, UTC calendar day, admin bypass)**.
+- [x] **6.2 — Backend: per-user analysis quota (3/day, UTC calendar day, admin bypass)**.
   - New `AnalysisRequestLog` table: `id`, `user_id` (FK), `portfolio_id`, `created_at`. One row written per analysis actually run.
   - New service (e.g. `app/services/analysis_quota_service.py`): count today's rows for a user (UTC midnight boundary, testable via an optional `now` param matching this codebase's existing pattern), record a new row after a successful analysis.
-  - `analyze_portfolio_route`: checks `current_user.is_admin` first (bypass); otherwise counts today's usage, returns `429` with a clear message (limit + UTC-midnight reset) if `>= 3`; records a row after a successful call.
-  - Tests: quota blocks the 4th call same day; admin bypasses entirely; count resets across the UTC day boundary (fixed `now`, not real-clock-dependent, following the pattern from Sprint 5's market-hours tests).
+  - `analyze_portfolio_route`: checks `current_user.is_admin` first (bypass); otherwise counts today's usage, returns `429` with a clear message (limit + UTC-midnight reset) if `>= 3`; records a row after a successful call. Response now includes `analyses_remaining_today` (`null` for admins).
+  - New `GET /users/me/analysis-quota` (`{limit, used_today, remaining}`) so the frontend can show remaining count before the user even clicks Analyze, not just after a response.
+  - Tests: quota blocks the 4th call same day; admin bypasses entirely; count resets across the UTC day boundary (fixed `now`, not real-clock-dependent, following the pattern from Sprint 5's market-hours tests); quota-check endpoint reflects usage and shows unlimited for admins.
   - One commit. Depends on 6.1 (needs `is_admin` to test the bypass).
 
 - [ ] **6.3 — Frontend: quota UI on the existing Analyze flow**.

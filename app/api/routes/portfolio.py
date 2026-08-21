@@ -10,6 +10,7 @@ from app.schemas.agent import AnalysisResponse
 from app.schemas.performance import PerformanceRange, PortfolioValuePoint
 from app.schemas.portfolio import PortfolioResponse, PortfolioCreate
 from app.services.agent_service import analyze_portfolio
+from app.services.analysis_quota_service import DAILY_ANALYSIS_LIMIT, count_analyses_today, record_analysis
 from app.services.performance_service import get_portfolio_performance
 from app.services.portfolio_service import create_portfolio, get_owned_portfolio, list_portfolios_for_user
 
@@ -30,6 +31,7 @@ def get_portfolio_route(portfolio_id: int, current_user: User = Depends(get_curr
             detail="Portfolio does not exist"
         )
     return portfolio
+
 
 @router.get("/", response_model=list[PortfolioResponse])
 def get_portfolios_route(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -60,6 +62,13 @@ def analyze_portfolio_route(
     except NoSuchElementException:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found")
 
+    used_today = count_analyses_today(db, current_user.id)
+    if not current_user.is_admin and used_today >= DAILY_ANALYSIS_LIMIT:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Daily analysis limit reached ({DAILY_ANALYSIS_LIMIT}/day). Resets at midnight UTC.",
+        )
+
     try:
         report = analyze_portfolio(db=db, portfolio_id=portfolio_id)
     except anthropic.APIError:
@@ -68,4 +77,8 @@ def analyze_portfolio_route(
             detail="Analysis is temporarily unavailable. Please try again.",
         )
 
-    return AnalysisResponse(report=report)
+    record_analysis(db, current_user.id, portfolio_id)
+    db.commit()
+
+    remaining = None if current_user.is_admin else max(DAILY_ANALYSIS_LIMIT - used_today - 1, 0)
+    return AnalysisResponse(report=report, analyses_remaining_today=remaining)
