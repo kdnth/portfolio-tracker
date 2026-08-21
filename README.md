@@ -1,8 +1,8 @@
 # Portfolio Tracker
 
-A full-stack web app for tracking investment portfolios: create accounts, manage portfolios, record buy/sell trades, track real market performance, and get an AI-generated analysis of your holdings.
+A full-stack web app for tracking investment portfolios: create accounts, manage portfolios, record buy/sell trades, track real market performance, and get an generated analysis of your holdings.
 
-Built as a portfolio project to practice backend design with FastAPI, typed frontend architecture, a real external-API integration surface (market data + LLM), and a deployment path (Postgres, containerized API, static SPA).
+Built as a portfolio project to practice backend design with FastAPI, typed frontend architecture, external-API integration, and agent building with specialized tooling.
 
 ## Features
 
@@ -49,9 +49,9 @@ Prices and cost basis are stored as `*_cents` integers e2e. Cent/dollar conversi
 
 Recording a trade does more than insert a row. The service finds or creates the holding for that ticker, updates share count, recalculates average cost on buys, rejects oversells, and commits the trade and holding together.
 
-### Money and shares are Decimal end-to-end, not float
+### Money and shares are Decimal end-to-end
 
-Share counts round-trip through Postgres as `decimal.Decimal` (a `Numeric` column) — Python refuses to mix `Decimal` with `float` in arithmetic rather than silently losing precision. Rather than coercing at each call site, `TradeCreate.shares` is typed `Decimal` too, so the whole trade-recording path stays one consistent numeric type.
+Share counts round-trip through Postgres as `decimal.Decimal` (a `Numeric` column). Python refuses to mix `Decimal` with `float` in arithmetic rather than silently losing precision. `TradeCreate.shares` is typed `Decimal` too, to keep the whole-trading path type consistent.
 
 ### Ownership failures return 404, not 403
 
@@ -71,27 +71,27 @@ Views stay thin and call Pinia stores for domain state. Shared form primitives h
 
 ### Market-hours-aware price polling
 
-A scheduled job polls Finnhub every 15 minutes, but only 9:30am–4:00pm ET on weekdays — it skips silently outside that window rather than wasting API calls or storing meaningless overnight/weekend snapshots.
+A scheduled job polls Finnhub every 15 minutes, but only 9:30am–4:00pm ET on weekdays. It silently skips outside that window to avoid wasting API calls or storing meaningless overnight/weekend snapshots.
 
 ### One price history, shared across users
 
-`PriceSnapshot` is keyed by ticker, not by holding — two users holding AAPL share the same price history rows instead of duplicating them per portfolio. `PortfolioSnapshot` is the only per-portfolio rollup, precomputed on each poll cycle for fast chart reads.
+`PriceSnapshot` is keyed by ticker instead of holding. Two users holding AAPL share the same price history rows instead of duplicating them per portfolio. `PortfolioSnapshot` is the only per-portfolio rollup, precomputed on each poll cycle for fast chart reads.
 
 ### Historical backfill is bounded and self-healing
 
-The first trade on a genuinely new ticker triggers a 30-day backfill from Twelve Data, rate-limited client-side to the provider's actual free-tier cap (8 requests/minute) so the app never gets throttled by surprise. A backfill that fails (rate limit, bad symbol, network error) doesn't fail the trade — it just retries on the next trade recorded for that ticker, since a new `Holding` only gets created once.
+The first trade on a genuinely new ticker triggers a 30-day backfill from Twelve Data, rate-limited client-side to the provider's actual free-tier cap (8 requests/minute) so the app never gets throttled by surprise. A backfill that fails (rate limit, bad symbol, network error) retries on the next trade recorded for that ticker.
 
 ### The agent's tool loop is hand-written, not framework-managed
 
-Built directly against the Anthropic Messages API (the `anthropic` SDK) rather than an agent framework — the loop that calls the model, dispatches `tool_use` blocks to real Python functions, and feeds `tool_result`s back is application code, on purpose, so every step of "what makes this agentic" stays visible and readable. Capped at 6 tool-call rounds before forcing a final answer, so a model that never stops calling tools still terminates.
+Built directly against the Anthropic Messages API (the `anthropic` SDK). Raw API was chosen over framework to avoid unnecessary abstraction. The loop that calls the model, dispatches `tool_use` blocks to Python functions, and feeds `tool_result`s back is application code, on purpose, so every step of the loop stays visible and readable. Capped at 6 tool-call rounds before forcing a final answer, so a model that never stops calling tools still terminates.
 
 ### The agent can't see what it isn't given
 
 Tools take `portfolio_id` as a server-bound parameter the model never supplies — the agent can only ever query the portfolio the request was actually made for, mirroring the same ownership-scoping used everywhere else in the API.
 
-### AI-generated report rendering is sanitized, not trusted
+### AI-generated report rendering is sanitized
 
-The agent's markdown output is parsed with `marked` and passed through `DOMPurify` before it ever reaches `v-html`. It's treated as untrusted content on the way to the DOM — not exempted just because it came from "our own" model.
+The agent's markdown output is parsed with `marked` and passed through `DOMPurify` before it ever reaches `v-html`. It's treated as untrusted content on the way to the DOM.
 
 ### Schema migrations on deploy
 
