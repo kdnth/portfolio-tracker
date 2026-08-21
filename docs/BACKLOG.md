@@ -188,10 +188,12 @@ Requires reading the spec's new "Analysis quota, RBAC, and public landing page" 
   - One commit. Depends on 6.2.
   - Not visually verified in-browser this pass (Chrome extension wasn't connected) -- type-check, lint, and build all pass, and the underlying quota logic is covered by 6.2's backend tests, but worth a manual click-through before considering this fully done.
 
-- [ ] **6.4 — Router restructuring: free up `/` for the landing page**.
+- [x] **6.4 — Router restructuring: free up `/` for the landing page**.
   - Move the authenticated app shell's own mount path from `/` to `/portfolios` (children become relative to that — `''` for the list, `:portfolioId` for detail). **No existing URLs change** — `/portfolios` and `/portfolios/:id` resolve exactly as they do today; only the parent route's own path moves, replacing the current `path: '' → redirect: portfolios` child.
-  - Add a new top-level `path: '/'` route (`LandingView`, added in 6.6), `guestOnly: true` like `/login`/`/register` so an authenticated visitor lands on `/` and is redirected straight to `/portfolios`.
+  - Added a new top-level `path: '/'` route (`LandingView`), `guestOnly: true` like `/login`/`/register` so an authenticated visitor lands on `/` and is redirected straight to `/portfolios` -- confirmed `LoginView`'s post-login `router.push(redirect ?? '/')` still lands correctly via the guard (authenticated + guestOnly on `/` → bounced to `/portfolios`); `RegisterView` already pushes to the named `portfolios` route directly, unaffected either way.
+  - `LandingView.vue` created as a placeholder for this task only (logo, one-line pitch, login/register links) -- the full marketing copy + live demo is 6.6.
   - One commit. Pure routing change, no new UI yet — unblocks 6.6.
+  - Not visually verified in-browser this pass (Chrome extension wasn't connected) -- type-check, lint, and build all pass. Worth a manual click-through alongside 6.3's before considering both fully done.
 
 - [ ] **6.5 — Backend: demo portfolio + public demo endpoints, IP-throttled**.
   - `scripts/seed_demo_portfolio.py`: creates one fixed demo user/portfolio/holdings/trades (real DB rows, not mocked). `DEMO_PORTFOLIO_ID` added to config once seeded.
