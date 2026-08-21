@@ -64,7 +64,7 @@ const chartData = computed(() => ({
         y: point.value_cents / 100,
       })),
       borderColor: '#0f766e',
-      backgroundColor: '#ccfbf1',
+      backgroundColor: 'rgba(15, 118, 110, 0.15)',
       fill: true,
       tension: 0.3,
       pointRadius: 0,
@@ -96,9 +96,12 @@ const chartOptions = computed<ChartOptions<'line'>>(() => ({
       time: {
         tooltipFormat: selectedRange.value === '1D' ? 'h:mm a' : 'MMM d, yyyy',
       },
-      grid: { display: false },
+      // No vertical gridlines across the plot area (keeps it uncluttered), but keep the
+      // small tick marks at each label so the axis reads as a real scale, not just text.
+      grid: { drawOnChartArea: false, drawTicks: true },
     },
     y: {
+      grid: { drawTicks: true },
       ticks: { callback: (value) => `$${value}` },
     },
   },
