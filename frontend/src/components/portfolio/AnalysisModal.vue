@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import axios from 'axios'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
 
@@ -32,6 +33,11 @@ async function runAnalysis() {
   try {
     report.value = await portfolioStore.analyzePortfolio(props.portfolioId)
   } catch (err) {
+    // A 429 means the daily quota is exhausted -- sync that locally right away so the
+    // Analyze button reflects it immediately, instead of waiting on a separate refetch.
+    if (axios.isAxiosError(err) && err.response?.status === 429) {
+      portfolioStore.markQuotaExhausted()
+    }
     error.value = getApiErrorMessage(err, 'Unable to analyze this portfolio right now.')
   } finally {
     loading.value = false

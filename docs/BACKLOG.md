@@ -181,10 +181,12 @@ Requires reading the spec's new "Analysis quota, RBAC, and public landing page" 
   - Tests: quota blocks the 4th call same day; admin bypasses entirely; count resets across the UTC day boundary (fixed `now`, not real-clock-dependent, following the pattern from Sprint 5's market-hours tests); quota-check endpoint reflects usage and shows unlimited for admins.
   - One commit. Depends on 6.1 (needs `is_admin` to test the bypass).
 
-- [ ] **6.3 — Frontend: quota UI on the existing Analyze flow**.
+- [x] **6.3 — Frontend: quota UI on the existing Analyze flow**.
   - Show remaining analyses for today near the Analyze button; disable it and show the reset time once exhausted.
-  - Handle the `429` response distinctly from other analyze errors (existing `getApiErrorMessage`-style handling).
+  - Handle the `429` response distinctly from other analyze errors: `AnalysisModal.vue` recognizes a 429 specifically (not just any error) and syncs the store's quota state immediately (`markQuotaExhausted()`), so the button reflects it right away rather than waiting on a separate refetch. The message itself still comes from the backend's existing `detail` string via `getApiErrorMessage`.
+  - `portfolio.ts` store: new `analysisQuota` state, `fetchAnalysisQuota()` (fetched non-blockingly on portfolio load -- a failure here never blocks the page), and `analyzePortfolio()` now updates `remaining` from each response's `analyses_remaining_today`.
   - One commit. Depends on 6.2.
+  - Not visually verified in-browser this pass (Chrome extension wasn't connected) -- type-check, lint, and build all pass, and the underlying quota logic is covered by 6.2's backend tests, but worth a manual click-through before considering this fully done.
 
 - [ ] **6.4 — Router restructuring: free up `/` for the landing page**.
   - Move the authenticated app shell's own mount path from `/` to `/portfolios` (children become relative to that — `''` for the list, `:portfolioId` for detail). **No existing URLs change** — `/portfolios` and `/portfolios/:id` resolve exactly as they do today; only the parent route's own path moves, replacing the current `path: '' → redirect: portfolios` child.
