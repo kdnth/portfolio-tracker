@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import auth, portfolio, user, trade, holding
+from app.api.routes import auth, demo, portfolio, user, trade, holding
 from app.core.config import settings
 from app.core.scheduler import start_scheduler, stop_scheduler
 from app import models  # noqa: F401 - ensures all models are registered before mappers configure
@@ -38,6 +38,7 @@ app.include_router(portfolio.router)
 app.include_router(user.router)
 app.include_router(trade.router)
 app.include_router(holding.router)
+app.include_router(demo.router)
 
 
 @app.get("/health")

@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 
+from app.core.config import settings
 from app.core.exceptions import PriceUnavailableException
 from app.models import Holding, Portfolio, PortfolioSnapshot, PriceSnapshot, User
 from app.services import price_service
@@ -29,6 +30,18 @@ def _make_holding(db_session, portfolio_id, ticker, shares, current_price_cents=
     db_session.add(holding)
     db_session.flush()
     return holding
+
+
+def test_list_actively_held_tickers_excludes_the_demo_portfolio(db_session, monkeypatch):
+    _, real_portfolio = _make_user_and_portfolio(db_session, username="alice")
+    _, demo_portfolio = _make_user_and_portfolio(db_session, username="demo_portfolio_owner")
+    _make_holding(db_session, real_portfolio.id, "AAPL", shares=10)
+    _make_holding(db_session, demo_portfolio.id, "CTSO", shares=40)
+    monkeypatch.setattr(settings, "demo_portfolio_id", demo_portfolio.id)
+
+    tickers = price_service.list_actively_held_tickers(db_session)
+
+    assert tickers == ["AAPL"]
 
 
 def test_poll_writes_snapshots_updates_holdings_and_portfolio_total(db_session, monkeypatch):

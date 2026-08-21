@@ -55,6 +55,13 @@ export function isFlatPricePoint(point: HoldingPerformancePoint): point is Price
   return 'price_cents' in point
 }
 
+export interface AnalysisQuota {
+  limit: number
+  used_today: number
+  /** Null means unlimited -- the current user is an admin, exempt from the daily quota. */
+  remaining: number | null
+}
+
 export const usePortfolioStore = defineStore('portfolio', () => {
   const portfolios = ref<Portfolio[]>([])
   const currentPortfolio = ref<Portfolio | null>(null)
@@ -63,6 +70,7 @@ export const usePortfolioStore = defineStore('portfolio', () => {
   const portfolioPerformanceLoading = ref(false)
   const holdingPerformance = ref<Record<number, HoldingPerformancePoint[]>>({})
   const holdingPerformanceLoading = ref<Record<number, boolean>>({})
+  const analysisQuota = ref<AnalysisQuota | null>(null)
 
   async function fetchPortfolios() {
     const response = await apiClient.get<Portfolio[]>('/portfolios/')
@@ -129,9 +137,27 @@ export const usePortfolioStore = defineStore('portfolio', () => {
     }
   }
 
+  async function fetchAnalysisQuota() {
+    const response = await apiClient.get<AnalysisQuota>('/users/me/analysis-quota')
+    analysisQuota.value = response.data
+  }
+
   async function analyzePortfolio(portfolioId: number): Promise<string> {
-    const response = await apiClient.post<{ report: string }>(`/portfolios/${portfolioId}/analyze`)
+    const response = await apiClient.post<{ report: string; analyses_remaining_today: number | null }>(
+      `/portfolios/${portfolioId}/analyze`,
+    )
+    analysisQuota.value = analysisQuota.value
+      ? { ...analysisQuota.value, remaining: response.data.analyses_remaining_today }
+      : null
     return response.data.report
+  }
+
+  /** Syncs local quota state immediately after a 429, without waiting on a separate
+   * fetchAnalysisQuota() round-trip, so the Analyze button reflects reality right away. */
+  function markQuotaExhausted() {
+    if (analysisQuota.value) {
+      analysisQuota.value = { ...analysisQuota.value, remaining: 0 }
+    }
   }
 
   function clearCurrent() {
@@ -149,6 +175,7 @@ export const usePortfolioStore = defineStore('portfolio', () => {
     portfolioPerformanceLoading,
     holdingPerformance,
     holdingPerformanceLoading,
+    analysisQuota,
     fetchPortfolios,
     createPortfolio,
     fetchHoldings,
@@ -156,7 +183,9 @@ export const usePortfolioStore = defineStore('portfolio', () => {
     createTrade,
     fetchPortfolioPerformance,
     fetchHoldingPerformance,
+    fetchAnalysisQuota,
     analyzePortfolio,
+    markQuotaExhausted,
     clearCurrent,
   }
 })

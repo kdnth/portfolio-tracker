@@ -164,6 +164,58 @@ Three real bugs surfaced once this was actually running in production: the portf
 
 ---
 
+## Sprint 6 — Analysis quota, RBAC, and public landing page
+
+Requires reading the spec's new "Analysis quota, RBAC, and public landing page" section first — it defines the exact behavior each task below needs to produce.
+
+- [x] **6.1 — `is_admin` flag + one-off grant script**.
+  - Migration: add `is_admin: bool = False` (server default `false`) to `User`.
+  - `scripts/grant_admin.py --username <username>`: sets `is_admin=True` for one user, by username. Same style as `scripts/rebackfill_stale_tickers.py` (dry-run-safe reporting, explicit confirmation before mutating). No admin UI.
+  - One commit.
+
+- [x] **6.2 — Backend: per-user analysis quota (3/day, UTC calendar day, admin bypass)**.
+  - New `AnalysisRequestLog` table: `id`, `user_id` (FK), `portfolio_id`, `created_at`. One row written per analysis actually run.
+  - New service (e.g. `app/services/analysis_quota_service.py`): count today's rows for a user (UTC midnight boundary, testable via an optional `now` param matching this codebase's existing pattern), record a new row after a successful analysis.
+  - `analyze_portfolio_route`: checks `current_user.is_admin` first (bypass); otherwise counts today's usage, returns `429` with a clear message (limit + UTC-midnight reset) if `>= 3`; records a row after a successful call. Response now includes `analyses_remaining_today` (`null` for admins).
+  - New `GET /users/me/analysis-quota` (`{limit, used_today, remaining}`) so the frontend can show remaining count before the user even clicks Analyze, not just after a response.
+  - Tests: quota blocks the 4th call same day; admin bypasses entirely; count resets across the UTC day boundary (fixed `now`, not real-clock-dependent, following the pattern from Sprint 5's market-hours tests); quota-check endpoint reflects usage and shows unlimited for admins.
+  - One commit. Depends on 6.1 (needs `is_admin` to test the bypass).
+
+- [x] **6.3 — Frontend: quota UI on the existing Analyze flow**.
+  - Show remaining analyses for today near the Analyze button; disable it and show the reset time once exhausted.
+  - Handle the `429` response distinctly from other analyze errors: `AnalysisModal.vue` recognizes a 429 specifically (not just any error) and syncs the store's quota state immediately (`markQuotaExhausted()`), so the button reflects it right away rather than waiting on a separate refetch. The message itself still comes from the backend's existing `detail` string via `getApiErrorMessage`.
+  - `portfolio.ts` store: new `analysisQuota` state, `fetchAnalysisQuota()` (fetched non-blockingly on portfolio load -- a failure here never blocks the page), and `analyzePortfolio()` now updates `remaining` from each response's `analyses_remaining_today`.
+  - One commit. Depends on 6.2.
+  - Not visually verified in-browser this pass (Chrome extension wasn't connected) -- type-check, lint, and build all pass, and the underlying quota logic is covered by 6.2's backend tests, but worth a manual click-through before considering this fully done.
+
+- [x] **6.4 — Router restructuring: free up `/` for the landing page**.
+  - Move the authenticated app shell's own mount path from `/` to `/portfolios` (children become relative to that — `''` for the list, `:portfolioId` for detail). **No existing URLs change** — `/portfolios` and `/portfolios/:id` resolve exactly as they do today; only the parent route's own path moves, replacing the current `path: '' → redirect: portfolios` child.
+  - Added a new top-level `path: '/'` route (`LandingView`), `guestOnly: true` like `/login`/`/register` so an authenticated visitor lands on `/` and is redirected straight to `/portfolios` -- confirmed `LoginView`'s post-login `router.push(redirect ?? '/')` still lands correctly via the guard (authenticated + guestOnly on `/` → bounced to `/portfolios`); `RegisterView` already pushes to the named `portfolios` route directly, unaffected either way.
+  - `LandingView.vue` created as a placeholder for this task only (logo, one-line pitch, login/register links) -- the full marketing copy + live demo is 6.6.
+  - One commit. Pure routing change, no new UI yet — unblocks 6.6.
+  - Not visually verified in-browser this pass (Chrome extension wasn't connected) -- type-check, lint, and build all pass. Worth a manual click-through alongside 6.3's before considering both fully done.
+
+- [x] **6.5 — Backend: demo portfolio + public demo endpoints, IP-throttled**.
+  - `scripts/seed_demo_portfolio.py`: creates one fixed demo user/portfolio/holdings/trades (real DB rows, not mocked; idempotent -- reruns just report the existing id). Uses common tickers (AAPL/MSFT/GOOGL/WMT) likely already tracked by real users, so the demo gets real historical chart data immediately rather than waiting on its own fresh backfill. `DEMO_PORTFOLIO_ID` added to config (`app/core/config.py`, optional, defaults `None`) once seeded -- confirmed live locally (seeded portfolio id 8, all endpoints hit and returning real data, including real `PriceSnapshot` history on the holding-performance endpoint).
+  - New public (no `get_current_user`) router `app/api/routes/demo.py`, mirroring the authenticated surface 1:1 rather than one flattened endpoint (so 6.6 can reuse the real interactive frontend components): `GET /demo/portfolio`, `GET /demo/holdings`, `GET /demo/performance?range=`, `GET /demo/holdings/{holding_id}/performance?range=`, `POST /demo/analyze` (calls the exact same `analyze_portfolio()` real users hit, bound to `DEMO_PORTFOLIO_ID`). All return `503` with a clear message if `DEMO_PORTFOLIO_ID` isn't configured, rather than a confusing `404`.
+  - New `DemoAnalysisRequestLog` table (`ip_address`, `created_at`); `POST /demo/analyze` returns `429` past 2/day for that IP, UTC-midnight reset. The UTC-midnight boundary logic is shared with 6.2's `analysis_quota_service` via a small new `app/core/time_utils.start_of_today_utc()` helper (both services were computing the identical thing).
+  - IP extraction (`app/core/deps.get_client_ip`): first hop of `X-Forwarded-For` when present (Railway sits behind a proxy), falling back to the raw connection address. Not yet verified against real prod traffic -- only locally, where there's no proxy in front to test against. Worth double-checking once this is deployed.
+  - Tests (`tests/test_demo.py`): 503 when unconfigured; endpoints return real seeded data; unknown holding 404s; per-IP quota blocks the 3rd same-day call; a different IP (via a different `X-Forwarded-For`) is unaffected.
+  - One commit. Depends on 6.1.
+  - **Follow-up, reusing real tickers didn't hold up**: real tickers share `PriceSnapshot` across every user, so there was no way to guarantee full 1D/1W/1M coverage (needed for "an interesting analysis") without either waiting on real market history to accumulate, or fabricating history for a real ticker and corrupting real users' charts for it. Rewrote `scripts/seed_demo_portfolio.py` to use fictional placeholder-company tickers (`CTSO`/Contoso, `FBRKM`/Fabrikam, `NWIND`/Northwind, `ADVWK`/AdventureWorks -- the standard industry placeholder names for demo data) with fully synthetic, generated price history (a seeded random walk per ticker, each given a deliberately different story: steady uptrend, decline, high volatility, strong uptrend) instead of real tickers. `list_actively_held_tickers` (`app/services/price_service.py`) now excludes `DEMO_PORTFOLIO_ID`'s holdings from the live-polling scheduler -- there's no real quote to poll for a fictional company. One-time seed only (no live polling to extend it); confirmed working live locally (portfolio id 9, 210 synthetic points/ticker, 1W/1M/1D all populated, each ticker's story visible in its numbers). `agent_service.py` gained a demo-only system-prompt addendum (`DEMO_SYSTEM_PROMPT_ADDENDUM`, appended only when `portfolio_id == settings.demo_portfolio_id`) so the model bases its analysis on the actual data patterns instead of inventing "facts" about companies that don't exist. Explicit synthetic-data disclosure added to the landing page and analysis modal (not just a footer mention). Tests added: `list_actively_held_tickers` excludes the demo portfolio; the system-prompt addendum only appears for the demo portfolio_id.
+
+- [x] **6.6 — Frontend: `LandingView` (marketing copy + live demo)**.
+  - Rundown of what the app does, links to `/login` and `/register`.
+  - New `frontend/src/stores/demo.ts`: mirrors `usePortfolioStore`'s shape but hits the public `/demo/*` endpoints, kept as a separate store so an anonymous visitor's demo browsing never shares state with an authenticated user's real portfolio data.
+  - `LandingView.vue` replaces the 6.4 placeholder: full holdings table + expand-in-place per-holding charts + portfolio performance chart, reusing the real `PerformanceChart.vue` unmodified (range switching, four-line OHLC view, "not enough data" state all work identically against demo data) -- not a flattened snapshot.
+  - New `DemoAnalysisModal.vue` (mirrors `AnalysisModal.vue`) wired to a real "Run the analysis demo" button calling `POST /demo/analyze` and rendering the actual returned report. Demo-specific `429` messaging distinct from the authenticated quota's -- the backend's own `detail` string already says "the live demo is limited... to keep this project's API costs sane," and the button/caption sync to exhausted state immediately via the same `markQuotaExhausted()` pattern as 6.3.
+  - One commit. Depends on 6.4 (needs `/` free) and 6.5 (needs the public endpoints).
+  - Not visually verified in-browser this pass (Chrome extension still not connected, same as 6.3/6.4) -- type-check, lint, and build all pass. This is the most user-facing piece of the whole sprint, so a manual click-through is worth prioritizing over the others once the extension is back.
+
+**Sprint 6 exit criteria**: any user is capped at 3 analyses/day (UTC) with a clear in-app indication of remaining count/reset time; the project owner can exempt their own account via `is_admin` without a full permissions system; `/` shows a public landing page with a real, working, IP-throttled analysis demo against seeded example data, and `/portfolios` and its children work exactly as before.
+
+---
+
 ## Explicitly not in this backlog
 
 Carried over from the spec's out-of-scope lists — not forgotten, just deliberately deferred:
@@ -176,3 +228,6 @@ Carried over from the spec's out-of-scope lists — not forgotten, just delibera
 - Conversational/multi-turn agent UI
 - User-configurable agent prompt/model/temperature
 - Retroactive computed portfolio history (deriving past portfolio value from historical share counts × backfilled ticker prices) — portfolio 1W/1M stays limited to real accumulated history, with an explicit "not enough data yet" state instead
+- Self-serve admin UI or a general role/permission system — just the one `is_admin` bypass
+- CAPTCHA or bot-detection on the public demo endpoint beyond IP-based counting
+- Per-portfolio analysis quota — the 3/day limit is per user, total

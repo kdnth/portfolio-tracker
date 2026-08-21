@@ -6,6 +6,7 @@ import httpx
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.exceptions import PriceUnavailableException, RateLimitExceededException
 from app.models import Holding, PortfolioSnapshot, PriceSnapshot
 from app.services.finnhub_service import QuoteResult, get_quote
@@ -16,8 +17,16 @@ logger = logging.getLogger(__name__)
 
 def list_actively_held_tickers(db: Session) -> list[str]:
     """Returns distinct tickers with a nonzero share count across all holdings, portfolio-agnostic.
-    Fully-sold positions are excluded so the poll cycle doesn't spend API calls pricing them."""
-    rows = db.query(Holding.ticker).filter(Holding.shares > 0).distinct().all()
+    Fully-sold positions are excluded so the poll cycle doesn't spend API calls pricing them.
+
+    The demo portfolio (DEMO_PORTFOLIO_ID) is also excluded -- its holdings use fictional
+    ticker symbols with synthetic, pre-generated price history (see
+    scripts/seed_demo_portfolio.py), and there's no real market quote to poll for a
+    fictional company."""
+    query = db.query(Holding.ticker).filter(Holding.shares > 0)
+    if settings.demo_portfolio_id is not None:
+        query = query.filter(Holding.portfolio_id != settings.demo_portfolio_id)
+    rows = query.distinct().all()
     return [row[0] for row in rows]
 
 

@@ -68,6 +68,11 @@ const totalGainPercent = computed(() =>
   unrealizedGainPercent(totalGainCents.value, totalCostBasisCents.value),
 )
 
+// null (quota not loaded yet, or unlimited for an admin) never blocks the button --
+// only an explicit 0 does.
+const analysesRemaining = computed(() => portfolioStore.analysisQuota?.remaining ?? null)
+const analysisExhausted = computed(() => analysesRemaining.value === 0)
+
 function holdingGainCents(holding: Holding) {
   return unrealizedGainCents(
     holdingMarketValueCents(holding.shares, holding.current_price_cents),
@@ -158,6 +163,10 @@ async function load() {
   expandedHoldingIds.value = new Set()
   portfolioPerformanceError.value = ''
   holdingPerformanceErrors.value = {}
+  // Fire-and-forget: if this fails, the Analyze button just falls back to its default
+  // enabled state rather than blocking the whole page on a non-critical fetch.
+  portfolioStore.fetchAnalysisQuota().catch(() => {})
+
   try {
     await Promise.all([
       portfolioStore.fetchPortfolio(portfolioId.value),
@@ -213,9 +222,23 @@ onUnmounted(() => {
           </p>
         </div>
 
-        <div class="flex gap-2">
-          <AppButton variant="secondary" @click="analysisOpen = true">Analyze portfolio</AppButton>
-          <AppButton @click="tradeOpen = true">Record trade</AppButton>
+        <div class="flex flex-col items-end gap-1">
+          <div class="flex gap-2">
+            <AppButton
+              variant="secondary"
+              :disabled="analysisExhausted"
+              @click="analysisOpen = true"
+            >
+              Analyze portfolio
+            </AppButton>
+            <AppButton @click="tradeOpen = true">Record trade</AppButton>
+          </div>
+          <p v-if="analysisExhausted" class="text-xs text-ink-muted">
+            Daily analysis limit reached. Resets at midnight UTC.
+          </p>
+          <p v-else-if="analysesRemaining !== null" class="text-xs text-ink-muted">
+            {{ analysesRemaining }} analys{{ analysesRemaining === 1 ? 'is' : 'es' }} left today
+          </p>
         </div>
       </div>
 

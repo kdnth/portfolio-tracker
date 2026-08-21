@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 
 import AppShell from '@/components/layout/AppShell.vue'
 import { useAuthStore } from '@/stores/auth'
+import LandingView from '@/views/LandingView.vue'
 import LoginView from '@/views/LoginView.vue'
 import PortfolioDetailView from '@/views/PortfolioDetailView.vue'
 import PortfolioListView from '@/views/PortfolioListView.vue'
@@ -12,20 +13,20 @@ const router = createRouter({
   routes: [
     {
       path: '/',
+      name: 'landing',
+      component: LandingView,
+      meta: { guestOnly: true },
+    },
+    {
+      // Mount path is /portfolios, not / -- frees up / for the public landing page above.
+      // Existing URLs are unchanged: children are relative to this, so /portfolios and
+      // /portfolios/:id resolve exactly as they did when this route's own path was /.
+      path: '/portfolios',
       component: AppShell,
       meta: { requiresAuth: true },
       children: [
-        { path: '', redirect: { name: 'portfolios' } },
-        {
-          path: 'portfolios',
-          name: 'portfolios',
-          component: PortfolioListView,
-        },
-        {
-          path: 'portfolios/:portfolioId',
-          name: 'portfolio-detail',
-          component: PortfolioDetailView,
-        },
+        { path: '', name: 'portfolios', component: PortfolioListView },
+        { path: ':portfolioId', name: 'portfolio-detail', component: PortfolioDetailView },
       ],
     },
     {
