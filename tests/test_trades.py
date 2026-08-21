@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 import httpx
 
-from app.models import PriceSnapshot
+from app.models import PortfolioSnapshot, PriceSnapshot
 from app.services import price_service
 from app.services.twelvedata_service import DailyClose
 
@@ -19,6 +19,20 @@ def _record_buy(client, headers, portfolio_id, ticker="AAPL"):
         },
         headers=headers,
     )
+
+
+def test_recording_a_trade_writes_a_fresh_portfolio_snapshot(client, make_user, db_session):
+    headers = make_user(username="alice", email="alice@test.com")
+    portfolio_id = client.post("/portfolios/", json={"name": "Growth"}, headers=headers).json()["id"]
+
+    response = _record_buy(client, headers, portfolio_id, ticker="AAPL")
+    assert response.status_code == 201
+
+    snapshots = db_session.query(PortfolioSnapshot).filter(
+        PortfolioSnapshot.portfolio_id == portfolio_id
+    ).all()
+    assert len(snapshots) == 1
+    assert snapshots[0].total_market_value_cents == 10 * 15000  # 10 shares @ $150.00
 
 
 def test_second_buy_against_an_existing_holding_succeeds(client, make_user):

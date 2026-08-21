@@ -160,3 +160,28 @@ def test_backfill_failure_is_swallowed_not_raised(db_session, monkeypatch):
     price_service.backfill_ticker_history_if_new(db_session, "TSLA")  # must not raise
 
     assert db_session.query(PriceSnapshot).filter(PriceSnapshot.ticker == "TSLA").count() == 0
+
+
+def test_record_portfolio_snapshot_now_sums_current_holdings(db_session):
+    _, portfolio = _make_user_and_portfolio(db_session)
+    _make_holding(db_session, portfolio.id, "AAPL", shares=10, current_price_cents=15000)
+    _make_holding(db_session, portfolio.id, "MSFT", shares=5, current_price_cents=30000)
+
+    price_service.record_portfolio_snapshot_now(db_session, portfolio.id)
+    db_session.flush()
+
+    snapshot = db_session.query(PortfolioSnapshot).filter(
+        PortfolioSnapshot.portfolio_id == portfolio.id
+    ).one()
+    assert snapshot.total_market_value_cents == 10 * 15000 + 5 * 30000
+
+
+def test_record_portfolio_snapshot_now_skips_when_nothing_actively_held(db_session):
+    _, portfolio = _make_user_and_portfolio(db_session)
+    _make_holding(db_session, portfolio.id, "GME", shares=0, current_price_cents=5000)
+
+    price_service.record_portfolio_snapshot_now(db_session, portfolio.id)
+
+    assert db_session.query(PortfolioSnapshot).filter(
+        PortfolioSnapshot.portfolio_id == portfolio.id
+    ).count() == 0

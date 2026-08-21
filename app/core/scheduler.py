@@ -1,11 +1,11 @@
 import logging
-from datetime import datetime, time
+from datetime import datetime, time, timezone
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.db.session import SessionLocal
-from app.services.price_service import list_actively_held_tickers, poll_and_record_prices
+from app.services.price_service import poll_and_record_prices
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +14,7 @@ MARKET_OPEN = time(9, 30)
 MARKET_CLOSE = time(16, 0)
 POLL_INTERVAL_MINUTES = 15
 
-scheduler = BackgroundScheduler()
+scheduler = BackgroundScheduler(timezone=timezone.utc)
 
 
 def is_market_hours(now: datetime | None = None) -> bool:
@@ -37,10 +37,13 @@ def run_poll_job() -> None:
     db = SessionLocal()
     try:
         failed_tickers = poll_and_record_prices(db)
-        polled = len(list_actively_held_tickers(db)) - len(failed_tickers)
-        logger.info("Price poll cycle complete: %d ticker(s) priced, %d failed", polled, len(failed_tickers))
+        logger.info("Price poll cycle complete: %d ticker(s) failed", len(failed_tickers))
         if failed_tickers:
             logger.warning("Price poll skipped tickers with no quote data: %s", failed_tickers)
+    except Exception:
+        # A poll cycle failure (e.g. a dropped DB connection) shouldn't take down the
+        # scheduler -- log it clearly and let the next scheduled cycle try again.
+        logger.exception("Price poll cycle failed")
     finally:
         db.close()
 
@@ -51,7 +54,7 @@ def start_scheduler() -> None:
         "interval",
         minutes=POLL_INTERVAL_MINUTES,
         id="finnhub_price_poll",
-        next_run_time=datetime.now(),  # run once immediately, not just after the first interval
+        next_run_time=datetime.now(timezone.utc),  # run once immediately, not just after the first interval
     )
     scheduler.start()
     logger.info("Price poll scheduler started: every %d minutes, market-hours aware", POLL_INTERVAL_MINUTES)

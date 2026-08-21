@@ -58,6 +58,30 @@ def _record_portfolio_snapshots(db: Session, as_of: datetime) -> None:
         )
 
 
+def record_portfolio_snapshot_now(db: Session, portfolio_id: int) -> None:
+    """Writes a single PortfolioSnapshot reflecting this portfolio's current total market
+    value, right now, from each holding's current_price_cents. Called after a trade changes
+    a portfolio's composition or value so the performance chart doesn't have to wait for the
+    next scheduled poll cycle (up to 15 min away, market-hours only) to show it. Does not
+    commit; the caller's own transaction covers the row staged here."""
+    # autoflush is off for this app's sessions, so a caller's just-mutated (but not yet
+    # flushed) holding.shares wouldn't be visible to the query below without this --
+    # without it, this would silently compute the snapshot from stale, pre-trade shares.
+    db.flush()
+    holdings = db.query(Holding).filter(Holding.portfolio_id == portfolio_id, Holding.shares > 0).all()
+    if not holdings:
+        return
+
+    total_cents = sum(float(holding.shares) * holding.current_price_cents for holding in holdings)
+    db.add(
+        PortfolioSnapshot(
+            portfolio_id=portfolio_id,
+            total_market_value_cents=round(total_cents),
+            as_of=datetime.now(timezone.utc),
+        )
+    )
+
+
 def backfill_ticker_history_if_new(db: Session, ticker: str) -> None:
     """If no PriceSnapshot exists yet for this ticker anywhere in the app, backfills the
     most recent 30 daily closes from Twelve Data. A failure here (bad symbol, rate limit,

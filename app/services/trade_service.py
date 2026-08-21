@@ -4,7 +4,7 @@ from app.core.exceptions import NoSuchElementException
 from app.models import Trade, Holding
 from app.models.trade import TradeOptions
 from app.schemas.trade import TradeCreate
-from app.services.price_service import backfill_ticker_history_if_new
+from app.services.price_service import backfill_ticker_history_if_new, record_portfolio_snapshot_now
 
 
 def create_trade(db: Session, portfolio_id: int, payload: TradeCreate) -> Trade:
@@ -47,6 +47,11 @@ def create_trade(db: Session, portfolio_id: int, payload: TradeCreate) -> Trade:
 
     holding.current_price_cents = payload.price_per_share_cents
     holding.last_priced_at = payload.executed_at
+
+    # Every trade changes this portfolio's total value -- the scheduled poll cycle would
+    # eventually reflect that, but not for up to 15 minutes (market hours only). Recording
+    # a snapshot now means the performance chart shows the change immediately.
+    record_portfolio_snapshot_now(db, portfolio_id)
 
     trade = Trade(
         holding_id=holding.id,
