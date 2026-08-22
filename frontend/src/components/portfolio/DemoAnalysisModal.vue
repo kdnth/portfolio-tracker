@@ -55,7 +55,7 @@ watch(
           class="size-4 shrink-0 animate-spin rounded-full border-2 border-current border-r-transparent"
           aria-hidden="true"
         />
-        Analyzing the demo portfolio — this can take up to 15 seconds…
+        Analyzing the demo portfolio. This can take up to 30 seconds…
       </p>
 
       <AppAlert v-else-if="error">{{ error }}</AppAlert>
@@ -64,8 +64,7 @@ watch(
         <div class="prose prose-sm max-w-none text-ink" v-html="renderedReport" />
         <AppAlert variant="info">
           This is a real analysis from the same agent, run against a demo portfolio of
-          fictional companies with synthetically generated price history — not real
-          companies or market data. It is not financial advice.
+          fictional companies with synthetically generated price history. It is not financial advice.
         </AppAlert>
       </template>
     </div>

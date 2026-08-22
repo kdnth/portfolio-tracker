@@ -61,7 +61,7 @@ watch(
           class="size-4 shrink-0 animate-spin rounded-full border-2 border-current border-r-transparent"
           aria-hidden="true"
         />
-        Analyzing your portfolio — this can take up to 15 seconds…
+        Analyzing your portfolio. This can take up to 30 seconds…
       </p>
 
       <AppAlert v-else-if="error">{{ error }}</AppAlert>
