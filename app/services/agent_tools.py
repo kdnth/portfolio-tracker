@@ -7,6 +7,16 @@ from app.schemas.performance import PerformanceRange
 from app.services.performance_service import RANGE_WINDOWS, get_holding_performance
 
 
+def _cents_to_dollars(cents: int) -> float:
+    """Converts integer cents to a rounded dollar float. Every monetary value handed to the
+    model goes through this -- relying on the model to divide raw cents by 100 itself proved
+    unreliable in practice: it correctly converted individual per-share prices (a familiar
+    magnitude) but was inconsistent on aggregate figures like total market value, landing
+    ~100x too high in a real observed case. Do the arithmetic here, hand over plain dollar
+    amounts, and there's nothing left for the model to get wrong."""
+    return round(cents / 100, 2)
+
+
 def _holding_market_value_cents(shares: Decimal, current_price_cents: int) -> int:
     return round(shares * current_price_cents)
 
@@ -17,7 +27,7 @@ def _holding_cost_basis_cents(shares: Decimal, avg_cost_basis_cents: int) -> int
 
 def get_holdings(db: Session, portfolio_id: int) -> list[dict]:
     """Returns every holding in this portfolio: ticker, shares, avg cost basis, current
-    price, market value, and unrealized gain/loss in both dollars and percent."""
+    price, market value, and unrealized gain/loss. All monetary values are in US dollars."""
     holdings = db.query(Holding).filter(Holding.portfolio_id == portfolio_id).all()
 
     results = []
@@ -31,10 +41,10 @@ def get_holdings(db: Session, portfolio_id: int) -> list[dict]:
             {
                 "ticker": holding.ticker,
                 "shares": float(holding.shares),
-                "avg_cost_basis_cents": holding.avg_cost_basis_cents,
-                "current_price_cents": holding.current_price_cents,
-                "market_value_cents": market_value_cents,
-                "unrealized_gain_cents": gain_cents,
+                "avg_cost_basis_usd": _cents_to_dollars(holding.avg_cost_basis_cents),
+                "current_price_usd": _cents_to_dollars(holding.current_price_cents),
+                "market_value_usd": _cents_to_dollars(market_value_cents),
+                "unrealized_gain_usd": _cents_to_dollars(gain_cents),
                 "unrealized_gain_percent": round(gain_percent, 2),
             }
         )
@@ -65,14 +75,15 @@ def get_price_history(db: Session, portfolio_id: int, ticker: str, range: Perfor
         "ticker": ticker,
         "range": range,
         "prices": [
-            {"as_of": snapshot.as_of.isoformat(), "price_cents": snapshot.price_cents}
+            {"as_of": snapshot.as_of.isoformat(), "price_usd": _cents_to_dollars(snapshot.price_cents)}
             for snapshot in snapshots
         ],
     }
 
 
 def get_trade_history(db: Session, portfolio_id: int, ticker: str | None = None) -> list[dict]:
-    """Returns this portfolio's trade history, oldest first, optionally filtered to one ticker."""
+    """Returns this portfolio's trade history, oldest first, optionally filtered to one
+    ticker. Monetary values are in US dollars."""
     query = db.query(Trade).join(Holding, Trade.holding_id == Holding.id).filter(Holding.portfolio_id == portfolio_id)
     if ticker:
         query = query.filter(Holding.ticker == ticker.strip().upper())
@@ -84,7 +95,7 @@ def get_trade_history(db: Session, portfolio_id: int, ticker: str | None = None)
             "ticker": trade.holding.ticker,
             "trade_type": trade.trade_type.value,
             "shares": float(trade.shares),
-            "price_per_share_cents": trade.price_per_share_cents,
+            "price_per_share_usd": _cents_to_dollars(trade.price_per_share_cents),
             "executed_at": trade.executed_at.isoformat(),
         }
         for trade in trades
@@ -96,13 +107,17 @@ AGENT_TOOLS = [
         "name": "get_holdings",
         "description": (
             "Returns every holding in this portfolio: ticker, shares, average cost basis, "
-            "current price, market value, and unrealized gain/loss in both dollars and percent."
+            "current price, market value, and unrealized gain/loss (in percent). All "
+            "monetary fields are plain US dollar amounts (e.g. 309.91), not cents."
         ),
         "input_schema": {"type": "object", "properties": {}, "required": []},
     },
     {
         "name": "get_price_history",
-        "description": "Returns historical price snapshots for a ticker held in this portfolio.",
+        "description": (
+            "Returns historical price snapshots for a ticker held in this portfolio. "
+            "Prices are plain US dollar amounts, not cents."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -121,7 +136,10 @@ AGENT_TOOLS = [
     },
     {
         "name": "get_trade_history",
-        "description": "Returns this portfolio's trade history, oldest first, optionally filtered to one ticker.",
+        "description": (
+            "Returns this portfolio's trade history, oldest first, optionally filtered to "
+            "one ticker. Prices are plain US dollar amounts, not cents."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
