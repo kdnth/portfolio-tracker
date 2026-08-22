@@ -1,6 +1,11 @@
 # Portfolio Tracker
 
-A full-stack web app for tracking investment portfolios: create accounts, manage portfolios, record buy/sell trades, track real market performance, and get an generated analysis of your holdings.
+Full-stack web app for tracking investment portfolios: 
+- create accounts
+- manage portfolios
+- record buy/sell trades
+- track real market performance with historic backfill
+- get an generated analysis of your holdings.
 
 Built as a portfolio project to practice backend design with FastAPI, typed frontend architecture, external-API integration, and agent building with specialized tooling.
 
@@ -12,7 +17,7 @@ Built as a portfolio project to practice backend design with FastAPI, typed fron
 - Weighted-average cost basis on buys
 - Live market prices via Finnhub, polled on a market-hours-aware schedule (9:30am–4:00pm ET, weekdays)
 - 30-day historical price backfill via Twelve Data the first time a ticker is tracked
-- Interactive performance charts — portfolio-level and per-holding, 1D/1W/1M ranges, real timestamps
+- Interactive portfolio-level and per-holding performance charts with 1D/1W/1M ranges and real timestamps
 - Unrealized gain/loss ($ and %) per holding and portfolio total
 - AI portfolio analysis: a tool-using agent (Claude Haiku 4.5) that queries your actual holdings, price history, and trade history, then writes a grounded, non-prescriptive report
 - Ownership-scoped API routes (cross-user access returns 404)
@@ -26,7 +31,7 @@ Built as a portfolio project to practice backend design with FastAPI, typed fron
 | Auth | JWT (python-jose), bcrypt (Passlib) |
 | ORM / DB | SQLAlchemy 2, Alembic, PostgreSQL (psycopg3) |
 | Market data | Finnhub (live quotes), Twelve Data (historical backfill), APScheduler (polling) |
-| AI agent | Anthropic Messages API (Claude Haiku 4.5), hand-rolled tool-use loop — no agent framework |
+| AI agent | Anthropic Messages API (Claude Haiku 4.5), hand-rolled tool-use loop (no agent framework) |
 | Frontend | Vue 3, TypeScript, Vite, Pinia, Vue Router, Tailwind CSS v4 |
 | Charts | Chart.js + vue-chartjs, chartjs-adapter-date-fns |
 | Report rendering | marked + DOMPurify (sanitized markdown → HTML) |
@@ -87,7 +92,7 @@ Built directly against the Anthropic Messages API (the `anthropic` SDK). Raw API
 
 ### The agent can't see what it isn't given
 
-Tools take `portfolio_id` as a server-bound parameter the model never supplies — the agent can only ever query the portfolio the request was actually made for, mirroring the same ownership-scoping used everywhere else in the API.
+Tools take `portfolio_id` as a server-bound parameter the model never supplies. The agent can only ever query the portfolio the request was actually made for, mirroring the same ownership-scoping used everywhere else in the API.
 
 ### AI-generated report rendering is sanitized
 
@@ -216,9 +221,9 @@ Use Railway's public domain for the frontend. The `*.railway.internal` hostname 
 
 This is an intentional MVP, not a brokerage clone.
 
-- Historical backfill is bounded to the most recent 30 days, not full since-inception history — no YTD/ALL chart ranges yet
-- No holiday-aware market calendar for the price scheduler — just a weekday/time-window check
-- The AI analysis is one-shot, not conversational, and isn't persisted — re-running calls the agent again from scratch
+- Historical backfill is bounded to the most recent 30 days, not full since-inception history. No YTD/ALL chart ranges yet
+- No holiday-aware market calendar for the price scheduler, just a weekday/time-window check
+- The AI analysis is one-shot, not conversational, and isn't persisted. Re-running calls the agent again from scratch.
 - No refresh tokens, rate limiting, or password reset yet
 
 Those are the next steps if I decide to extend the project further (since-inception history, YTD/ALL ranges, persisted analysis history, stronger session handling).

@@ -50,14 +50,32 @@ def test_get_holdings_computes_market_value_and_gain(db_session):
     results = {row["ticker"]: row for row in agent_tools.get_holdings(db_session, portfolio.id)}
 
     aapl = results["AAPL"]
-    assert aapl["market_value_cents"] == 180000
-    assert aapl["unrealized_gain_cents"] == 30000
+    assert aapl["market_value_usd"] == 1800.0
+    assert aapl["unrealized_gain_usd"] == 300.0
     assert aapl["unrealized_gain_percent"] == 20.0
 
     msft = results["MSFT"]
-    assert msft["market_value_cents"] == 135000
-    assert msft["unrealized_gain_cents"] == -15000
+    assert msft["market_value_usd"] == 1350.0
+    assert msft["unrealized_gain_usd"] == -150.0
     assert msft["unrealized_gain_percent"] == -10.0
+
+
+def test_get_holdings_returns_dollars_not_cents(db_session):
+    # Regression test: tool output used to hand the model raw integer cents (e.g.
+    # current_price_cents=18000), relying on it to divide by 100 itself. In practice the
+    # model converted individual per-share prices correctly but was inconsistent on
+    # aggregate figures, landing ~100x too high in a real observed case. All monetary
+    # fields must now already be dollar floats, with no "_cents" field left to misread.
+    _, portfolio = _make_user_and_portfolio(db_session)
+    _make_holding(db_session, portfolio.id, "AAPL", shares=10, avg_cost_basis_cents=15000, current_price_cents=18000)
+
+    holding = agent_tools.get_holdings(db_session, portfolio.id)[0]
+
+    assert holding["avg_cost_basis_usd"] == 150.0
+    assert holding["current_price_usd"] == 180.0
+    assert holding["market_value_usd"] == 1800.0
+    assert holding["unrealized_gain_usd"] == 300.0
+    assert not any(key.endswith("_cents") for key in holding)
 
 
 def test_get_holdings_scoped_to_portfolio(db_session):
@@ -94,7 +112,7 @@ def test_get_price_history_returns_snapshots_in_range(db_session):
 
     assert "error" not in result
     assert result["ticker"] == "AAPL"
-    assert [p["price_cents"] for p in result["prices"]] == [15500]
+    assert [p["price_usd"] for p in result["prices"]] == [155.0]
 
 
 def test_get_price_history_matches_ticker_case_insensitively(db_session):
