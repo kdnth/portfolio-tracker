@@ -153,7 +153,8 @@ onMounted(async () => {
       </div>
     </header>
 
-    <section class="py-24 px-4 text-start bg-accent">
+    <section class="py-24 bg-accent text-start">
+      <div class="mx-auto max-w-5xl px-4">
         <h1 class="text-4xl font-bold tracking-tight text-canvas">Track your investments with real time and historic data.</h1>
         <p class="mt-6 max-w-2xl text-base text-canvas">
           Portfolio Tracker pulls real market prices for your holdings, charts real
@@ -167,7 +168,8 @@ onMounted(async () => {
             <AppButton variant="secondary">Log in</AppButton>
           </RouterLink>
         </div>
-      </section>
+      </div>
+    </section>
 
     <main class="mx-auto max-w-5xl px-4 py-12">
       <section class="mt-8">
@@ -185,9 +187,7 @@ onMounted(async () => {
         <template v-else>
           <AppAlert variant="info" class="mt-8 italic">
             Contoso, Fabrikam, Northwind, and AdventureWorks are fictional placeholder companies, not real, tradeable
-            securities — their price history was generated for this demo, not pulled from
-            a real market. The analysis below is a real, live response from the same agent
-            real accounts use.
+            securities. The analysis is a live response from the same agent real accounts use.
           </AppAlert>
 
           <div class="mt-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -210,7 +210,23 @@ onMounted(async () => {
 
             <div class="flex flex-col items-end gap-1">
               <AppButton variant="secondary" :disabled="analysisExhausted" @click="analysisOpen = true">
-                Run the analysis demo
+                Run demo analysis
+                <svg
+                  class="size-6 shrink-0"
+                  viewBox="0 0 194 231"
+                  fill="none"
+                  stroke="currentColor"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M6 79.5C44 60 46.4872 40.309 51.5 -0.5C56.6293 40.0239 63.5 59.5 96.5 79.5C67.1412 88.5941 56.716 103.835 51.5 153.5C47.0666 102.795 35.7376 88.8311 6 79.5Z"
+                    stroke-width="9"
+                  />
+                  <path
+                    d="M91 143C129 123.5 131.487 103.809 136.5 63C141.629 103.524 148.5 123 181.5 143C152.141 152.094 141.716 167.335 136.5 217C132.067 166.295 120.738 152.331 91 143Z"
+                    stroke-width="10"
+                  />
+                </svg>
               </AppButton>
               <p v-if="analysisExhausted" class="text-xs text-ink-muted">
                 Demo limit reached for today. Resets at midnight UTC.
