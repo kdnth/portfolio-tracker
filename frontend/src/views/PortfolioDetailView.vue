@@ -230,6 +230,22 @@ onUnmounted(() => {
               @click="analysisOpen = true"
             >
               Analyze portfolio
+              <svg
+                  class="size-6 shrink-0"
+                  viewBox="0 0 194 231"
+                  fill="none"
+                  stroke="currentColor"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M6 79.5C44 60 46.4872 40.309 51.5 -0.5C56.6293 40.0239 63.5 59.5 96.5 79.5C67.1412 88.5941 56.716 103.835 51.5 153.5C47.0666 102.795 35.7376 88.8311 6 79.5Z"
+                    stroke-width="9"
+                  />
+                  <path
+                    d="M91 143C129 123.5 131.487 103.809 136.5 63C141.629 103.524 148.5 123 181.5 143C152.141 152.094 141.716 167.335 136.5 217C132.067 166.295 120.738 152.331 91 143Z"
+                    stroke-width="10"
+                  />
+                </svg>
             </AppButton>
             <AppButton @click="tradeOpen = true">Record trade</AppButton>
           </div>
