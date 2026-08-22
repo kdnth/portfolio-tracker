@@ -155,7 +155,6 @@ onMounted(async () => {
 
     <section class="py-24 bg-accent text-start">
       <div class="mx-auto max-w-5xl px-4">
-    <section class="py-24 px-4 text-start bg-accent">
         <h1 class="text-4xl font-bold tracking-tight text-canvas">Track your investments with real time and historic data.</h1>
         <p class="mt-6 max-w-2xl text-base text-canvas">
           Portfolio Tracker pulls real market prices for your holdings, charts real
@@ -171,7 +170,6 @@ onMounted(async () => {
         </div>
       </div>
     </section>
-      </section>
 
     <main class="mx-auto max-w-5xl px-4 py-12">
       <section class="mt-8">
