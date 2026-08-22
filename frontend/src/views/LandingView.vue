@@ -153,7 +153,8 @@ onMounted(async () => {
       </div>
     </header>
 
-    <section class="py-24 px-4 text-start bg-accent">
+    <section class="py-24 bg-accent text-start">
+      <div class="mx-auto max-w-5xl px-4">
         <h1 class="text-4xl font-bold tracking-tight text-canvas">Track your investments with real time and historic data.</h1>
         <p class="mt-6 max-w-2xl text-base text-canvas">
           Portfolio Tracker pulls real market prices for your holdings, charts real
@@ -167,7 +168,8 @@ onMounted(async () => {
             <AppButton variant="secondary">Log in</AppButton>
           </RouterLink>
         </div>
-      </section>
+      </div>
+    </section>
 
     <main class="mx-auto max-w-5xl px-4 py-12">
       <section class="mt-8">
@@ -185,9 +187,7 @@ onMounted(async () => {
         <template v-else>
           <AppAlert variant="info" class="mt-8 italic">
             Contoso, Fabrikam, Northwind, and AdventureWorks are fictional placeholder companies, not real, tradeable
-            securities — their price history was generated for this demo, not pulled from
-            a real market. The analysis below is a real, live response from the same agent
-            real accounts use.
+            securities. The analysis is a live response from the same agent real accounts use.
           </AppAlert>
 
           <div class="mt-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -210,7 +210,7 @@ onMounted(async () => {
 
             <div class="flex flex-col items-end gap-1">
               <AppButton variant="secondary" :disabled="analysisExhausted" @click="analysisOpen = true">
-                Run the analysis demo
+                Run demo analysis
               </AppButton>
               <p v-if="analysisExhausted" class="text-xs text-ink-muted">
                 Demo limit reached for today. Resets at midnight UTC.
